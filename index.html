@@ -6,27 +6,19 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>SaaSVG Pro</title>
     <script src="https://cdn.tailwindcss.com"></script>
-  <script type="importmap">
-{
-  "imports": {
-    "@google/genai": "https://aistudiocdn.com/@google/genai@^1.27.0",
-    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
-    "react/": "https://aistudiocdn.com/react@^19.2.0/",
-    "react": "https://aistudiocdn.com/react@^19.2.0",
-    "potrace": "https://aistudiocdn.com/potrace@^2.1.8"
-  }
-}
-</script>
-</head>
-  <body class="bg-[#0A0A0A]">
-    <div id="root"></div>
-    <script>
-      // Polyfill for Node.js's Buffer object, which the potrace library expects.
-      // This must run before the main module script to ensure the environment is set up.
-      if (typeof Buffer === 'undefined') {
-        var Buffer = Uint8Array;
+    <script type="importmap">
+      {
+        "imports": {
+          "@google/genai": "https://aistudiocdn.com/@google/genai@^1.27.0",
+          "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
+          "react/": "https://aistudiocdn.com/react@^19.2.0/",
+          "react": "https://aistudiocdn.com/react@^19.2.0"
+        }
       }
     </script>
+  </head>
+  <body class="bg-[#0A0A0A]">
+    <div id="root"></div>
     <script type="module" src="/index.tsx"></script>
   </body>
 </html>

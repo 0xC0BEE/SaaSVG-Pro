@@ -3,8 +3,8 @@ import { GoogleGenAI, Modality, Type } from "@google/genai";
 import { NANO_PROMPT_TEMPLATE } from "../constants";
 import { type GeneratorOptions, type Asset } from "./types";
 
-// NOTE: Potrace is assumed to be installed and browser-compatible.
-import { trace } from 'potrace';
+// NOTE: Potrace is now a local, browser-safe ES module.
+import { trace } from '../lib/potrace.js';
 
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY! });
 
@@ -35,9 +35,8 @@ const rasterToSVG = (pngBase64: string): Promise<string> => {
                     color: 'white', // Ensure the output SVG is visible on a dark background.
                 };
 
-                // The potrace library can directly handle ImageData objects from a canvas,
+                // The local potrace library can directly handle ImageData objects from a canvas,
                 // which is the standard browser-native way to get raw pixel data.
-                // This avoids all Node.js-specific Buffer dependencies and related errors.
                 trace(imageData, traceParams, (err: Error | null, svg: string) => {
                     if (err) {
                         console.error("Potrace tracing error:", err);
