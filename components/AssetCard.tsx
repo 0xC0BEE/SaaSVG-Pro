@@ -12,7 +12,7 @@ interface AssetCardProps {
 type ViewMode = 'svg' | 'png';
 
 export const AssetCard: React.FC<AssetCardProps> = ({ asset }) => {
-  const [viewMode, setViewMode] = useState<ViewMode>('svg');
+  const [viewMode, setViewMode] = useState<ViewMode>(asset.png ? 'png' : 'svg');
 
   const handleDownloadSVG = () => {
     downloadFile(asset.svg, `saasvg-pro-${asset.seed}.svg`, 'image/svg+xml');
@@ -28,10 +28,9 @@ export const AssetCard: React.FC<AssetCardProps> = ({ asset }) => {
     <div className="bg-[#121212] border border-gray-800 rounded-lg overflow-hidden transition-all duration-300 hover:shadow-2xl hover:shadow-[#00D4AA]/10 hover:border-[#00D4AA]/30">
       <div className="aspect-square w-full bg-grid-pattern flex items-center justify-center p-8 transition-transform duration-300 ease-in-out hover:scale-105">
         {viewMode === 'svg' ? (
-          // FIX: Render SVG using dangerouslySetInnerHTML as required for better compatibility.
-          // The inner SVG is styled to fill the container, and its viewBox will handle scaling.
+          // FIX: Add text-white so `currentColor` in the SVG resolves to white.
           <div 
-            className="w-full h-full [&>svg]:w-full [&>svg]:h-full"
+            className="w-full h-full text-white [&>svg]:w-full [&>svg]:h-full"
             dangerouslySetInnerHTML={{ __html: asset.svg }} 
           />
         ) : (
@@ -65,7 +64,6 @@ export const AssetCard: React.FC<AssetCardProps> = ({ asset }) => {
   );
 };
 
-// A simple grid background pattern using CSS
 const style = document.createElement('style');
 style.innerHTML = `
   .bg-grid-pattern {

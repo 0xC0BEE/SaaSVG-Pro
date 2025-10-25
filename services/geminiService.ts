@@ -26,23 +26,30 @@ const rasterToSVG = (pngBase64: string): Promise<string> => {
                 if (!ctx) {
                     return reject(new Error("Could not create canvas context for tracing."));
                 }
+
+                // FIX: Fill canvas with white to handle transparent PNG backgrounds.
+                // This gives the tracer a solid background to work against.
+                ctx.fillStyle = 'white';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                
                 ctx.drawImage(img, 0, 0);
                 const imageData = ctx.getImageData(0, 0, img.width, img.height);
 
                 const traceParams = {
                     turdSize: 1,
                     optCurve: true,
-                    color: 'white', // Ensure the output SVG is visible on a dark background.
+                    color: 'white', // This will be the fill color of the final SVG paths.
                 };
-
-                // The local potrace library can directly handle ImageData objects from a canvas,
-                // which is the standard browser-native way to get raw pixel data.
+                
                 trace(imageData, traceParams, (err: Error | null, svg: string) => {
                     if (err) {
                         console.error("Potrace tracing error:", err);
                         return reject(err);
                     }
-                    resolve(svg);
+                    // The tracer outputs paths filled with `white`. To make it themeable,
+                    // we can replace this with `currentColor` so it inherits color via CSS.
+                    const themeableSvg = svg.replace(/fill="white"/g, 'fill="currentColor"');
+                    resolve(themeableSvg);
                 });
             } catch (error) {
                 console.error("Error during canvas tracing:", error);
@@ -52,7 +59,6 @@ const rasterToSVG = (pngBase64: string): Promise<string> => {
         img.onerror = () => {
             reject(new Error("Failed to load the generated PNG image for tracing. It might be corrupted."));
         };
-        // Use a data URI to load the base64 image into the Image object.
         img.src = `data:image/png;base64,${pngBase64}`;
     });
 };
@@ -61,7 +67,7 @@ const rasterToSVG = (pngBase64: string): Promise<string> => {
 const CLASSIC_PROMPT_TEMPLATE = `
 You are an expert SVG designer. Generate one self-contained, production-ready SVG icon based on the following criteria.
 The SVG must not contain any external links, scripts, or raster images. All styles must be inline.
-The design should be clean, modern, and suitable for a SaaS product.
+The design should be clean, modern, and suitable for a SaaS product. Use fill="currentColor" for all colored paths to allow for CSS theming.
 
 Criteria:
 - Prompt: [prompt]
@@ -122,7 +128,7 @@ export const generateSVGs = async (
                 .replace('[narrative]', options.narrative);
             
             const response = await ai.models.generateContent({
-                model: 'gemini-2.5-pro', // Better for code/structured data generation
+                model: 'gemini-2.5-pro',
                 contents: prompt,
                 config: {
                     responseMimeType: "application/json",
@@ -131,7 +137,7 @@ export const generateSVGs = async (
                         properties: {
                             svg: {
                                 type: Type.STRING,
-                                description: 'The full SVG code as a string.',
+                                description: 'The full SVG code as a string using currentColor.',
                             },
                         },
                         required: ['svg'],
@@ -141,7 +147,6 @@ export const generateSVGs = async (
             });
             
             const text = response.text.trim();
-            // The API can sometimes wrap the JSON in markdown, so we strip it.
             const cleanedText = text.replace(/^```json\s*|```$/g, '').trim();
             const result = JSON.parse(cleanedText);
 
