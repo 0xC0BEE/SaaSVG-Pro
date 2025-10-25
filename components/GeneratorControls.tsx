@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { type GeneratorOptions, type GeneratorMode } from '../services/types';
 import { THEMES, COLORS, NARRATIVES } from '../constants';
@@ -15,10 +14,11 @@ export const GeneratorControls: React.FC<GeneratorControlsProps> = ({ onSubmit, 
   const [colors, setColors] = useState(COLORS[1]);
   const [narrative, setNarrative] = useState(NARRATIVES[0]);
   const [seed, setSeed] = useState(28100);
+  const [quickMode, setQuickMode] = useState(true);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    onSubmit({ prompt, mode, theme, colors, narrative, seed });
+    onSubmit({ prompt, mode, theme, colors, narrative, seed, quick: quickMode });
   };
 
   const OptionSelect: React.FC<{label: string, value: string, onChange: (e: React.ChangeEvent<HTMLSelectElement>) => void, options: string[]}> = ({ label, value, onChange, options }) => (
@@ -54,7 +54,7 @@ export const GeneratorControls: React.FC<GeneratorControlsProps> = ({ onSubmit, 
             />
         </div>
         
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 items-end">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 items-end">
            <div>
               <label className="text-sm font-medium text-gray-400 mb-1 block">Mode</label>
               <div className="flex items-center space-x-2 bg-[#1A1A1A] p-1 rounded-md border border-gray-700">
@@ -65,6 +65,21 @@ export const GeneratorControls: React.FC<GeneratorControlsProps> = ({ onSubmit, 
           <OptionSelect label="Theme" value={theme} onChange={(e) => setTheme(e.target.value)} options={THEMES} />
           <OptionSelect label="Colors" value={colors} onChange={(e) => setColors(e.target.value)} options={COLORS} />
           <OptionSelect label="Narrative" value={narrative} onChange={(e) => setNarrative(e.target.value)} options={NARRATIVES} />
+          <div className="flex flex-col">
+            <label className="text-sm font-medium text-gray-400 mb-1">Trace Quality</label>
+            <button
+              type="button"
+              onClick={() => setQuickMode(!quickMode)}
+              disabled={mode !== 'nano'}
+              className={`w-full h-[42px] relative inline-flex items-center rounded-md border transition-colors ${
+                mode !== 'nano' ? 'cursor-not-allowed bg-gray-800 border-gray-700' : 'cursor-pointer bg-[#1A1A1A] border-gray-700'
+              }`}
+            >
+              <span className={`absolute left-1 top-1 h-8 w-1/2 rounded-sm bg-[#00D4AA] transition-transform ${quickMode ? 'translate-x-0' : 'translate-x-[95%]'}`}/>
+              <span className={`relative z-10 w-1/2 text-center text-sm font-semibold transition-colors ${quickMode ? 'text-black' : 'text-gray-300'}`}>Fast</span>
+              <span className={`relative z-10 w-1/2 text-center text-sm font-semibold transition-colors ${!quickMode ? 'text-black' : 'text-gray-300'}`}>Quality</span>
+            </button>
+          </div>
         </div>
         
         <button

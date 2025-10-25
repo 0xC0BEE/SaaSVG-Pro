@@ -1,4 +1,3 @@
-
 export type GeneratorMode = 'classic' | 'nano';
 
 export interface GeneratorOptions {
@@ -8,6 +7,7 @@ export interface GeneratorOptions {
   colors: string;
   narrative: string;
   seed: number;
+  quick: boolean;
 }
 
 export interface Asset {
