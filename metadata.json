@@ -1,0 +1,5 @@
+{
+  "name": "SaaSVG Pro",
+  "description": "A hybrid SVG generation tool using classic text-to-SVG and an innovative 'Nano' mode that traces high-contrast raster images into clean, editable vector graphics.",
+  "requestFramePermissions": []
+}
