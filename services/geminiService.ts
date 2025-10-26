@@ -5,17 +5,15 @@ import { NANO_PROMPT_TEMPLATE } from '../constants';
 // @ts-ignore - Assuming CryptoJS is globally available via a script tag.
 declare const CryptoJS: any;
 
-// --- API KEYS ARE NOW MANAGED SECURELY VIA THE SECRETS (🔑) PANEL ---
-// The application will read your API keys from the environment variables.
-// Please add the following secrets in the panel on the left:
-// 1. API_KEY: Your Google Gemini API Key
-// 2. VITE_VECTORIZER_KEY: Your Vectorizer.ai API Key
-// 3. VITE_VECTORIZER_SECRET: Your Vectorizer.ai API Secret
-
+// API keys are read from environment variables.
+// For local development, create a .env.local file.
+// In a deployed environment, these should be set as secrets.
 const GEMINI_API_KEY = process.env.API_KEY;
-const VECTORIZER_API_KEY = process.env.VITE_VECTORIZER_KEY;
-const VECTORIZER_API_SECRET = process.env.VITE_VECTORIZER_SECRET;
-// --- END OF API KEY SECTION ---
+
+// Vite exposes client-side env vars with a VITE_ prefix.
+// We also check for non-prefixed vars as a fallback for environments where prefixing isn't possible.
+const VECTORIZER_API_KEY = process.env.VITE_VECTORIZER_KEY || process.env.VECTORIZER_KEY;
+const VECTORIZER_API_SECRET = process.env.VITE_VECTORIZER_SECRET || process.env.VECTORIZER_SECRET;
 
 
 /**
@@ -87,11 +85,11 @@ async function pngToSVGVectorizer(pngBase64: string, onStatusUpdate: (status: st
     onStatusUpdate('Vectorizing with Vectorizer.ai...');
     const fallbackSvg = `<svg viewBox="0 0 400 300"><rect width="400" height="300" fill="#F0F0F0" stroke="#CCC" stroke-width="2"/></svg>`;
 
-    try {
-        if (!VECTORIZER_API_KEY || !VECTORIZER_API_SECRET) {
-            throw new Error('Vectorizer.ai credentials are not configured. Please add VITE_VECTORIZER_KEY and VITE_VECTORIZER_SECRET to the Secrets (🔑) panel.');
-        }
+    if (!VECTORIZER_API_KEY || !VECTORIZER_API_SECRET) {
+        throw new Error('Vectorizer.ai API Key/Secret is missing. Please add VITE_VECTORIZER_KEY and VITE_VECTORIZER_SECRET to your secrets or .env.local file.');
+    }
 
+    try {
         const formData = new FormData();
         const imageBlob = base64ToBlob(pngBase64, 'image/png');
         formData.append('image', imageBlob, 'image.png');
@@ -121,11 +119,10 @@ async function pngToSVGVectorizer(pngBase64: string, onStatusUpdate: (status: st
 
     } catch (error) {
         console.error('Error calling Vectorizer.ai API:', error);
-        // Ensure a helpful message for the user if it's the specific config error
-        if (error instanceof Error && error.message.includes('credentials')) {
-            throw error;
+        if (error instanceof Error) {
+            throw error; // Re-throw the original error to be caught by the main handler
         }
-        return fallbackSvg; // Return fallback on other errors
+        return fallbackSvg; // Return fallback on other unknown errors
     }
 }
 
