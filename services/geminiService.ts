@@ -8,7 +8,11 @@ declare const CryptoJS: any;
 // API keys are read from environment variables.
 // For local development, create a .env.local file.
 // In a deployed environment, these should be set as secrets.
-const GEMINI_API_KEY = process.env.API_KEY;
+const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
+
+if (!GEMINI_API_KEY) {
+  throw new Error('Gemini API Key is missing. Please add VITE_GEMINI_API_KEY to .env.local or dashboard secrets.');
+}
 
 // Vite exposes client-side env vars with a VITE_ prefix.
 // We also check for non-prefixed vars as a fallback for environments where prefixing isn't possible.
