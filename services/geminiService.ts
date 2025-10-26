@@ -157,27 +157,38 @@ async function createEdgeDetectionFallback(pngBase64: string): Promise<string> {
     return Promise.resolve('<svg viewBox="0 0 100 100"><rect x="1" y="1" width="98" height="98" stroke="currentColor" fill="none"/><text x="50" y="50" text-anchor="middle" fill="currentColor" font-size="8">Trace Fallback</text></svg>');
 }
 
+/**
+ * Extracts an SVG code block from a string, handling markdown wrappers.
+ * @param responseText The text potentially containing an SVG.
+ * @returns The SVG string or null if not found.
+ */
+function extractSvg(responseText: string): string | null {
+  const svgRegex = /<svg[\s\S]*?<\/svg>/;
+  const match = responseText.match(svgRegex);
+  return match ? match[0] : null;
+}
 
 /**
  * Main function to generate SVGs based on the selected mode ('nano' or 'classic').
+ * Generates a single variant to avoid API rate limits.
  */
 export async function generateSVGs(
   options: GeneratorOptions,
   onStatusUpdate: (status: string) => void
 ): Promise<Asset[]> {
-  const promises = Array(4).fill(0).map(async (_, i) => {
-    const seed = options.seed + i * 100; // Generate 4 variants by adjusting seed
-    const variantOptions = { ...options, seed };
-    if (options.mode === 'nano') {
-      return generateNano(variantOptions, onStatusUpdate);
-    } else {
-      return generateClassic(variantOptions, onStatusUpdate);
-    }
-  });
+  // Generate only one variant to avoid rate limit issues.
+  onStatusUpdate('Generating variant...');
+  
+  let asset: Asset;
+  if (options.mode === 'nano') {
+    asset = await generateNano(options, onStatusUpdate);
+  } else {
+    asset = await generateClassic(options, onStatusUpdate);
+  }
 
-  const assets = await Promise.all(promises);
-  return assets.flat();
+  return [asset];
 }
+
 
 /**
  * Generates an SVG directly using a text prompt to Gemini.
@@ -202,12 +213,10 @@ async function generateClassic(
     },
   });
 
-  let svg = response.text.trim();
-  svg = svg.replace(/```svg\n?/, '').replace(/```$/, '');
+  const svg = extractSvg(response.text);
 
-
-  if (!svg.startsWith('<svg') || !svg.endsWith('</svg>')) {
-    console.error('Invalid SVG response from API:', svg);
+  if (!svg) {
+    console.error('Invalid SVG response from API:', response.text);
     throw new Error(
       'Failed to generate a valid SVG. The model may have returned an unexpected format.'
     );
@@ -285,14 +294,15 @@ async function generateNano(
     });
     
     onStatusUpdate('Finalizing high-fidelity SVG...');
-    svg = svgResponse.text.trim();
-    svg = svg.replace(/```svg\n?/, '').replace(/```$/, '');
+    const extracted = extractSvg(svgResponse.text);
 
-    if (!svg.startsWith('<svg') || !svg.endsWith('</svg>')) {
-      console.error('Invalid SVG response from vision model:', svg);
+    if (!extracted) {
+      console.error('Invalid SVG response from vision model:', svgResponse.text);
       // Fallback to the quick tracer if the expert mode fails
       onStatusUpdate('Expert mode failed, falling back to quick trace...');
       svg = await rasterToSVG(pngBase64, options, onStatusUpdate);
+    } else {
+        svg = extracted;
     }
   }
 
