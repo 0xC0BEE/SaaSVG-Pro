@@ -7,7 +7,7 @@ export interface GeneratorOptions {
   colors: string;
   narrative: string;
   seed: number;
-  quick: boolean;
+  singleGenMode: boolean;
 }
 
 export interface Asset {

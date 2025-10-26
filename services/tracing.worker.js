@@ -1,3 +1,3 @@
 // This file is obsolete.
-// The Web Worker logic has been inlined directly into `services/geminiService.ts`
-// to prevent cross-origin loading errors in sandboxed environments.
+// The Web Worker logic has been replaced by the Vectorizer.ai API integration.
+// This file is no longer used.
