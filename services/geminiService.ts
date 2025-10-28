@@ -1,70 +1,150 @@
-import { GoogleGenAI, Modality } from '@google/genai';
-import { type GeneratorOptions, type Asset } from './types';
-import { NANO_PROMPT_TEMPLATE, STYLES, NARRATIVES } from '../constants';
+import { GoogleGenAI, Modality, GenerateContentResponse } from '@google/genai';
+// FIX: `VectorizerOptions` is a type and should be imported with `type`.
+import { type GeneratorOptions, type Asset, type VectorizerOptions } from './types';
+import { NANO_PROMPT_TEMPLATE, ART_STYLES, NARRATIVES, ICON_ART_STYLES, ICON_THEMES, ICON_PROMPT_TEMPLATE } from '../constants';
 
-// Helper to poll Replicate API
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+// --- Start of External API Implementations ---
 
-// Helper to convert base64 to Blob for multipart form data
-const b64toBlob = (b64Data: string, contentType = '', sliceSize = 512) => {
-  const byteCharacters = atob(b64Data);
-  const byteArrays = [];
-  for (let offset = 0; offset < byteCharacters.length; offset += sliceSize) {
-    const slice = byteCharacters.slice(offset, offset + sliceSize);
-    const byteNumbers = new Array(slice.length);
-    for (let i = 0; i < slice.length; i++) {
-      byteNumbers[i] = slice.charCodeAt(i);
-    }
-    const byteArray = new Uint8Array(byteNumbers);
-    byteArrays.push(byteArray);
-  }
-  return new Blob(byteArrays, { type: contentType });
-};
-
-// Fallback function using Gemini multimodal to trace a PNG
-const fallbackToGemini = async (
-    pngBase64: string, 
-    updateStatus: (status: string) => void
-): Promise<string> => {
-    updateStatus('API provider failed. Falling back to Gemini for vectorization...');
-    // FIX: Per guidelines, initialize the client right before use.
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY! });
-    
-    const imagePart = {
-        inlineData: {
-            mimeType: 'image/png',
-            data: pngBase64,
-        },
-    };
-    const textPart = {
-        text: 'Trace this PNG image into a clean, simple, flat, single-layer SVG with no embedded raster data. The SVG should be scalable and editable. The output should be only the raw SVG code, with no other text, explanation, or markdown code fences.'
-    };
-
-    const response = await ai.models.generateContent({
-        model: 'gemini-2.5-pro',
-        contents: { parts: [imagePart, textPart] },
-    });
-
-    let svg = response.text;
-
-    // Clean up potential markdown code fences, although the prompt asks not to include them.
-    if (svg.startsWith('```svg')) {
-        svg = svg.substring(6, svg.length - 3).trim();
-    } else if (svg.startsWith('```')) {
-        svg = svg.substring(3, svg.length - 3).trim();
-    }
-
-    return svg;
-}
-
-
-export const generateSVGs = async (
+/**
+ * Calls the Vectorizer.ai API to convert a PNG to an SVG.
+ */
+const vectorizeWithVectorizerAI = async (
+  pngBase64: string,
   options: GeneratorOptions,
   updateStatus: (status: string) => void
-): Promise<Asset[]> => {
+): Promise<string> => {
+  updateStatus('Phase 2/3: Vectorizing with Vectorizer.ai...');
+  const { vectorizerID, vectorizerSecret } = options;
+  if (!vectorizerID || !vectorizerSecret) throw new Error('Vectorizer.ai credentials are not set.');
 
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY! });
+  const byteString = atob(pngBase64);
+  const ab = new ArrayBuffer(byteString.length);
+  const ia = new Uint8Array(ab);
+  for (let i = 0; i < byteString.length; i++) {
+    ia[i] = byteString.charCodeAt(i);
+  }
+  const blob = new Blob([ab], { type: 'image/png' });
+
+  const formData = new FormData();
+  formData.append('image', blob);
+  // NOTE: Vectorizer.ai API options are limited. We are not passing vectorizerOptions for now.
+
+  const response = await fetch('https://vectorizer.ai/api/v1/vectorize', {
+    method: 'POST',
+    headers: {
+      Authorization: 'Basic ' + btoa(`${vectorizerID}:${vectorizerSecret}`),
+    },
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const errorBody = await response.text();
+    console.error('Vectorizer.ai API Error:', errorBody);
+    throw new Error(`Vectorizer.ai failed: ${response.statusText}`);
+  }
+
+  return response.text();
+};
+
+
+/**
+ * Calls the Replicate API to use the Recraft model for vectorization.
+ * This is a two-step process: start the job, then poll for the result.
+ */
+const vectorizeWithRecraft = async (
+  pngBase64: string,
+  options: GeneratorOptions,
+  updateStatus: (status: string) => void
+): Promise<string> => {
+  updateStatus('Phase 2/3: Vectorizing with Recraft.ai...');
+  const { recraftToken } = options;
+  if (!recraftToken) throw new Error('Recraft.ai (Replicate) token is not set.');
+
+  const REPLICATE_API_URL = 'https://api.replicate.com/v1/predictions';
+  const REPLICATE_MODEL_VERSION = '248d564195195b0c0316d3f20f0442eaaa4f5148a1b5be7f61b0c07d389a1c1d';
+
+  // Step 1: Start the prediction
+  const startResponse = await fetch(REPLICATE_API_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Token ${recraftToken}`,
+    },
+    body: JSON.stringify({
+      version: REPLICATE_MODEL_VERSION,
+      input: {
+        image: `data:image/png;base64,${pngBase64}`,
+        mode: 'vector_illustration', // Recraft-specific option
+      },
+    }),
+  });
+
+  if (!startResponse.ok) {
+    const errorBody = await startResponse.json();
+    console.error('Replicate API Error (start):', errorBody);
+    throw new Error(`Replicate failed to start: ${startResponse.statusText}`);
+  }
+
+  const prediction = await startResponse.json();
+  const predictionId = prediction.id;
   
+  // Step 2: Poll for the result with timeout
+  let finalResult = null;
+  const startTime = Date.now();
+  const timeout = 180000; // 3 minutes timeout
+
+  while (!finalResult) {
+    if (Date.now() - startTime > timeout) {
+      throw new Error('Recraft.ai vectorization timed out after 3 minutes.');
+    }
+
+    updateStatus('Phase 2/3: Polling Recraft.ai for result...');
+    await new Promise(resolve => setTimeout(resolve, 2000)); // wait 2s between polls
+    
+    const pollResponse = await fetch(`${REPLICATE_API_URL}/${predictionId}`, {
+      headers: { Authorization: `Token ${recraftToken}` }
+    });
+    
+    if (!pollResponse.ok) {
+      const errorText = await pollResponse.text();
+      console.error('Replicate API Error (poll):', errorText);
+      throw new Error(`Replicate polling failed with status: ${pollResponse.statusText}`);
+    }
+    
+    const pollResult = await pollResponse.json();
+
+    if (pollResult.status === 'succeeded') {
+      finalResult = pollResult.output;
+      break;
+    } else if (pollResult.status === 'failed' || pollResult.status === 'canceled') {
+      console.error('Replicate API Error (poll):', pollResult.error);
+      throw new Error(`Replicate job failed: ${pollResult.error}`);
+    }
+    // If status is 'starting' or 'processing', the loop continues, which is correct.
+  }
+
+  // Step 3: Fetch the SVG from the result URL
+  if (!finalResult || !Array.isArray(finalResult) || finalResult.length === 0) {
+    throw new Error('Recraft.ai returned an empty or invalid result.');
+  }
+
+  const svgUrl = finalResult[0];
+  const svgResponse = await fetch(svgUrl);
+  if (!svgResponse.ok) throw new Error('Failed to download final SVG from Recraft.ai URL.');
+
+  return svgResponse.text();
+};
+
+/**
+ * Generates a single asset based on the provided options.
+ * This function contains the core logic for both 'classic' and 'nano' modes.
+ */
+const generateSingleAsset = async (
+  options: GeneratorOptions,
+  updateStatus: (status: string) => void
+): Promise<Asset> => {
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY! });
+
   if (options.mode === 'classic') {
     updateStatus('Generating SVG with Gemini Classic...');
     const colorPrompt = `Use this exact color palette with the specified percentages: ${options.palette
@@ -74,14 +154,14 @@ export const generateSVGs = async (
     const classicPrompt = `
       Create a clean, simple, flat, single-layer SVG illustration with no embedded raster data.
       The SVG must be 400x300 pixels.
-      The style should be ${STYLES[options.style].prompt}.
+      The style should be ${ART_STYLES[options.style].description}. For example: "${ART_STYLES[options.style].fewShot}".
       The scene should depict: A ${NARRATIVES[options.narrative as keyof typeof NARRATIVES]} ${options.theme} scene.
       ${colorPrompt}
       Primary subject: ${options.prompt}.
       The output should be only the raw SVG code, with no other text, explanation, or markdown formatting.
     `;
     
-    const response = await ai.models.generateContent({
+    const response: GenerateContentResponse = await ai.models.generateContent({
         model: 'gemini-2.5-pro',
         contents: classicPrompt,
     });
@@ -93,32 +173,54 @@ export const generateSVGs = async (
     } else if (svg.startsWith('```')) {
         svg = svg.substring(3, svg.length - 3).trim();
     }
-
-    console.log(`API choice: Gemini (classic)`);
-    console.log(`SVG length: ${svg.length}`);
     
-    return [{ svg, seed: options.seed }];
+    return { svg, seed: options.seed };
   }
 
   if (options.mode === 'nano') {
-    if (!options.apiChoice || (options.apiChoice === 'vectorizer' && (!options.vectorizerID || !options.vectorizerSecret)) || (options.apiChoice === 'recraft' && !options.recraftToken)) {
-        throw new Error('API credentials for Nano mode are not configured.');
-    }
-
     // Phase 1: Generate PNG with Gemini
     updateStatus('Phase 1/3: Generating base PNG with Gemini Nano...');
-    const colorPrompt = `Use this exact color palette with the specified percentages: ${options.palette
-        .map(c => `${c.hex} (${c.percent}%)`)
+    const colorPrompt = `Use this exact color palette: ${options.palette
+        .map(c => c.hex)
         .join(', ')}.`;
-    const nanoPrompt = NANO_PROMPT_TEMPLATE
-        .replace('[style]', STYLES[options.style].prompt)
-        .replace('[narrative]', NARRATIVES[options.narrative as keyof typeof NARRATIVES])
-        .replace('[theme]', options.theme)
-        .replace('[colors]', colorPrompt)
-        .replace('[prompt]', options.prompt)
-        + '\nThe illustration must be 400x300 pixels.';
 
-    const imageResponse = await ai.models.generateContent({
+    let nanoPrompt = '';
+    
+    if (options.illustrationMode === 'icons') {
+        const artStyle = ICON_ART_STYLES[options.style];
+        if (!artStyle) throw new Error(`Invalid icon style selected: ${options.style}`);
+
+        const colorString = options.palette.map(c => c.hex).join(', ');
+        
+        nanoPrompt = ICON_PROMPT_TEMPLATE
+            .replace('[iconTheme]', options.iconTheme)
+            .replace('[prompt]', options.prompt)
+            .replace('[style]', options.style)
+            .replace('[styleDescription]', artStyle.description)
+            .replace('[styleFewShot]', artStyle.fewShot)
+            .replace('[simplicityLevel]', options.simplicityLevel.toString())
+            .replace('[colors]', colorString);
+            
+        console.log('Icons mode prompt constructed.');
+
+    } else { // 'illustrations' mode
+        const narrativeText = NARRATIVES[options.narrative as keyof typeof NARRATIVES];
+        const artStyle = ART_STYLES[options.style];
+        let injectedSnippet = `Generate in ${options.style} style. Style description: ${artStyle.description}. The image should depict a ${narrativeText} ${options.theme} scene. A good example of the style is "${artStyle.fewShot}".`;
+
+        if (['sleek-3d-finance', 'playful-modular-3d', 'chromium-effect'].includes(options.style)) {
+            injectedSnippet += ' The final illustration must not contain any humans or human-like figures.';
+        }
+        
+        nanoPrompt = NANO_PROMPT_TEMPLATE
+            .replace('[injected_snippet]', injectedSnippet)
+            .replace('[colors]', colorPrompt)
+            .replace('[prompt]', options.prompt);
+    }
+    
+    console.log(`Mode: ${options.illustrationMode}`, `Style: ${options.style}`);
+    
+    const imageResponse: GenerateContentResponse = await ai.models.generateContent({
       model: 'gemini-2.5-flash-image',
       contents: {
         parts: [{ text: nanoPrompt }],
@@ -129,7 +231,6 @@ export const generateSVGs = async (
     });
 
     let pngBase64 = '';
-    // FIX: Properly access the generated image data from the response.
     const firstCandidate = imageResponse.candidates?.[0];
     if (firstCandidate?.content?.parts?.[0]?.inlineData?.data) {
         pngBase64 = firstCandidate.content.parts[0].inlineData.data;
@@ -139,83 +240,65 @@ export const generateSVGs = async (
         throw new Error('Gemini did not return an image for vectorization.');
     }
     
-    // Phase 2: Vectorize PNG
-    updateStatus(`Phase 2/3: Vectorizing PNG with ${options.apiChoice}...`);
-    let svg = '';
+    // If SVG generation is not requested, return only the PNG.
+    if (!options.generateSvg) {
+        updateStatus('PNG generation complete.');
+        return { svg: '', png: pngBase64, seed: options.seed };
+    }
 
+    // Phase 2: Vectorize PNG using the selected external API
+    let svg = '';
     try {
         if (options.apiChoice === 'vectorizer') {
-            const imageBlob = b64toBlob(pngBase64, 'image/png');
-            const formData = new FormData();
-            formData.append('image', imageBlob, 'image.png');
-            // FIX: Correctly set the output format parameter according to Vectorizer.ai documentation.
-            formData.append('output.file_format', 'svg');
-
-            const auth = btoa(`${options.vectorizerID}:${options.vectorizerSecret}`);
-            const vectorizerResponse = await fetch('https://api.vectorizer.ai/api/v1/vectorize', {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Basic ${auth}`,
-                },
-                body: formData,
-            });
-
-            if (!vectorizerResponse.ok) {
-                const errorText = await vectorizerResponse.text();
-                throw new Error(`Vectorizer.ai API Error: ${vectorizerResponse.status} ${errorText}`);
-            }
-            svg = await vectorizerResponse.text();
-        } else { // 'recraft'
-            const replicateStartResponse = await fetch('https://api.replicate.com/v1/predictions', {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Token ${options.recraftToken}`,
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    // UPDATE: Use the latest version of the Recraft vectorizer model on Replicate.
-                    version: "5952a255de31454591a56111f44f6f87425f18751512140409a8a7298642a84d",
-                    input: {
-                        image: `data:image/png;base64,${pngBase64}`,
-                    },
-                }),
-            });
-
-            if (!replicateStartResponse.ok) {
-                const errorJson = await replicateStartResponse.json();
-                throw new Error(`Replicate API Error: ${errorJson.detail}`);
-            }
-            let prediction = await replicateStartResponse.json();
-
-            updateStatus(`Phase 2/3: Polling Replicate for result...`);
-            while (prediction.status !== 'succeeded' && prediction.status !== 'failed') {
-                await sleep(2000); // Polling interval
-                const pollResponse = await fetch(prediction.urls.get, {
-                    headers: {
-                        'Authorization': `Token ${options.recraftToken}`,
-                    },
-                });
-                prediction = await pollResponse.json();
-            }
-
-            if (prediction.status === 'failed') {
-                throw new Error(`Replicate prediction failed: ${prediction.error}`);
-            }
-            
-            const svgUrl = prediction.output;
-            const svgResponse = await fetch(svgUrl);
-            svg = await svgResponse.text();
+            svg = await vectorizeWithVectorizerAI(pngBase64, options, updateStatus);
+        } else if (options.apiChoice === 'recraft') {
+            svg = await vectorizeWithRecraft(pngBase64, options, updateStatus);
+        } else {
+            throw new Error('No valid API provider chosen for Nano mode.');
         }
     } catch(error) {
-        console.error('Vectorization API failed, attempting fallback.', error);
-        svg = await fallbackToGemini(pngBase64, updateStatus);
+        console.error('Primary vectorization API failed. Fallback to PNG only.', error);
+        console.log('Fallback triggered');
+        // On failure, return the asset with only the PNG. The UI will handle the toast.
+        return { svg: '', png: pngBase64, seed: options.seed };
     }
 
     updateStatus('Phase 3/3: Finalizing asset...');
-    console.log(`API choice: ${options.apiChoice}`);
-    console.log(`SVG length: ${svg.length}`);
+    return { svg, png: pngBase64, seed: options.seed };
+  }
+  
+  // Should not be reached
+  throw new Error('Invalid generation mode specified.');
+};
 
-    return [{ svg, png: pngBase64, seed: options.seed }];
+// --- Main Generation Logic ---
+
+export const generateSVGs = async (
+  options: GeneratorOptions,
+  updateStatus: (status: string) => void
+): Promise<Asset[]> => {
+
+  if (options.runMode === 'single') {
+    const asset = await generateSingleAsset(options, updateStatus);
+    return [asset];
+  }
+
+  if (options.runMode === 'batch') {
+    const assets: Asset[] = [];
+    const BATCH_SIZE = 4;
+    for (let i = 0; i < BATCH_SIZE; i++) {
+        updateStatus(`Generating asset ${i + 1} of ${BATCH_SIZE}...`);
+        const batchOptions = { ...options, seed: options.seed + i };
+        const asset = await generateSingleAsset(batchOptions, updateStatus);
+        assets.push(asset);
+
+        // Add a delay between calls to avoid rate limiting, but not after the last one.
+        if (i < BATCH_SIZE - 1) {
+            updateStatus(`Waiting 5s before next generation...`);
+            await new Promise(resolve => setTimeout(resolve, 5000));
+        }
+    }
+    return assets;
   }
   
   return [];

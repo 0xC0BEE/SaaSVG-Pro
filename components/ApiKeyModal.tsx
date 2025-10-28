@@ -8,13 +8,19 @@ interface ApiKeyModalProps {
     vectorizerSecret?: string;
     recraftToken?: string;
   }) => void;
+  initialKeys?: {
+    apiChoice: ApiChoice;
+    vectorizerID?: string;
+    vectorizerSecret?: string;
+    recraftToken?: string;
+  };
 }
 
-export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ onSave }) => {
-  const [apiChoice, setApiChoice] = useState<ApiChoice>('vectorizer');
-  const [vectorizerId, setVectorizerId] = useState('');
-  const [vectorizerSecret, setVectorizerSecret] = useState('');
-  const [recraftToken, setRecraftToken] = useState('');
+export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ onSave, initialKeys }) => {
+  const [apiChoice, setApiChoice] = useState<ApiChoice>(initialKeys?.apiChoice || 'vectorizer');
+  const [vectorizerId, setVectorizerId] = useState(initialKeys?.vectorizerID || '');
+  const [vectorizerSecret, setVectorizerSecret] = useState(initialKeys?.vectorizerSecret || '');
+  const [recraftToken, setRecraftToken] = useState(initialKeys?.recraftToken || '');
 
   const isSaveDisabled = () => {
     if (apiChoice === 'vectorizer') {
@@ -43,7 +49,7 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ onSave }) => {
         <h2 className="text-2xl font-bold text-white mb-2">Configure API Provider</h2>
         <p className="text-gray-400 mb-6">
           To use the high-quality "Nano" mode, please choose a provider and enter your API credentials.
-          Your keys will be saved in your browser's local storage for this session.
+          Your keys will be saved in your browser's local storage.
         </p>
 
         <div className="mb-4">
