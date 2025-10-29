@@ -1,4 +1,5 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
+import ImageTracer from 'imagetracerjs';
 import { WandIcon } from '../icons/WandIcon';
 import { FillIcon } from '../icons/FillIcon';
 import { UndoIcon } from '../icons/UndoIcon';
@@ -7,9 +8,8 @@ import { DownloadIcon } from '../icons/DownloadIcon';
 import { TraceIcon } from '../icons/TraceIcon'; // New icon for tracing
 import { downloadFile } from '../lib/utils';
 
-// Let TypeScript know that fabric.js and Potrace are available globally
+// Let TypeScript know that fabric.js is available globally
 declare var fabric: any;
-declare var Potrace: any;
 
 
 interface PNGEditorProps {
@@ -79,10 +79,17 @@ export const PNGEditor: React.FC<PNGEditorProps> = ({ pngBase64, seed }) => {
     const [history, setHistory] = useState<string[]>([]);
     const [historyIndex, setHistoryIndex] = useState(-1);
     const MAX_HISTORY = 10;
+
+    // Use a ref to hold the latest state for callbacks to prevent stale closures
+    const stateRef = useRef({ history, historyIndex, tolerance });
+    useEffect(() => {
+        stateRef.current = { history, historyIndex, tolerance };
+    }, [history, historyIndex, tolerance]);
     
     const saveState = useCallback(() => {
         if (!fabricCanvasRef.current) return;
         const currentState = fabricCanvasRef.current.toDataURL({ format: 'png' });
+        const { history, historyIndex } = stateRef.current;
         const newHistory = history.slice(0, historyIndex + 1);
         newHistory.push(currentState);
         
@@ -92,110 +99,121 @@ export const PNGEditor: React.FC<PNGEditorProps> = ({ pngBase64, seed }) => {
         
         setHistory(newHistory);
         setHistoryIndex(newHistory.length - 1);
-    }, [history, historyIndex]);
+    }, []);
     
     const restoreState = useCallback((index: number) => {
+        const { history } = stateRef.current;
+        if (!history[index]) return;
         fabric.Image.fromURL(history[index], (img: any) => {
-            const originalImage = fabricCanvasRef.current.getObjects('image').find((o: any) => !o.isSelectionOverlay);
+            const originalImage = fabricCanvasRef.current?.getObjects('image').find((o: any) => !o.isSelectionOverlay);
             if (originalImage) {
                  originalImage.setElement(img.getElement());
                  fabricCanvasRef.current.renderAll();
             }
         });
-    }, [history]);
+    }, []);
     
     const handleUndo = useCallback(() => {
+        const { historyIndex } = stateRef.current;
         if (historyIndex > 0) {
             const newIndex = historyIndex - 1;
             setHistoryIndex(newIndex);
             restoreState(newIndex);
             console.log(`PNG Editor: Undo action. Stack count: ${newIndex}`);
         }
-    }, [historyIndex, restoreState]);
+    }, [restoreState]);
 
     const handleRedo = useCallback(() => {
+        const { history, historyIndex } = stateRef.current;
         if (historyIndex < history.length - 1) {
             const newIndex = historyIndex + 1;
             setHistoryIndex(newIndex);
             restoreState(newIndex);
         }
-    }, [historyIndex, history.length, restoreState]);
+    }, [restoreState]);
     
-    const handleCanvasClick = (options: any) => {
-        if (!options.pointer || !fabricCanvasRef.current) return;
-        
-        const baseImage = fabricCanvasRef.current.getObjects('image').find((o: any) => !o.isSelectionOverlay);
-        if (!baseImage) return;
-
-        // Transform click coordinates from canvas space to image space
-        const inverseMatrix = fabric.util.invertTransform(baseImage.calcTransformMatrix());
-        const pointInImage = fabric.util.transformPoint(options.pointer, inverseMatrix);
-
-        const x = Math.floor(pointInImage.x);
-        const y = Math.floor(pointInImage.y);
-
-        if (x < 0 || y < 0 || x >= baseImage.width || y >= baseImage.height) return;
-
-        console.log(`Editor: Wand clicked at [${x},${y}], tolerance [${tolerance}]`);
-        
-        const tempCanvas = document.createElement('canvas');
-        tempCanvas.width = baseImage.width;
-        tempCanvas.height = baseImage.height;
-        const tempCtx = tempCanvas.getContext('2d', { willReadFrequently: true })!;
-        tempCtx.drawImage(baseImage.getElement(), 0, 0, baseImage.width, baseImage.height);
-        const imageData = tempCtx.getImageData(0, 0, baseImage.width, baseImage.height);
-        
-        const selectionIndices = floodFill(imageData, x, y, tolerance);
-        
-        const selectionCanvas = document.createElement('canvas');
-        selectionCanvas.width = baseImage.width;
-        selectionCanvas.height = baseImage.height;
-        const selectionCtx = selectionCanvas.getContext('2d')!;
-        const selectionImageData = selectionCtx.createImageData(baseImage.width, baseImage.height);
-
-        for (const index of selectionIndices) {
-            selectionImageData.data[index * 4] = 0;   // R
-            selectionImageData.data[index * 4 + 1] = 212; // G
-            selectionImageData.data[index * 4 + 2] = 170; // B
-            selectionImageData.data[index * 4 + 3] = 100; // A
-        }
-        selectionCtx.putImageData(selectionImageData, 0, 0);
-
-        if (selectionOverlayRef.current) {
-            fabricCanvasRef.current.remove(selectionOverlayRef.current);
-        }
-        
-        selectionOverlayRef.current = new fabric.Image(selectionCanvas, {
-            ...baseImage.getObjectTransformation(),
-            selectable: false,
-            evented: false,
-            isSelectionOverlay: true, 
-            selectionIndices: selectionIndices
-        });
-        
-        fabricCanvasRef.current.add(selectionOverlayRef.current);
-        fabricCanvasRef.current.renderAll();
-    };
-
-    // Initialize Fabric.js canvas and resize observer
+    // Main useEffect for setup, image loading, and event handling
     useEffect(() => {
         if (!canvasRef.current || !containerRef.current) return;
 
         const canvas = new fabric.Canvas(canvasRef.current);
         fabricCanvasRef.current = canvas;
+        
+        const handleCanvasClick = (options: any) => {
+            if (!options.pointer || !fabricCanvasRef.current) return;
+            
+            const baseImage = fabricCanvasRef.current.getObjects('image').find((o: any) => !o.isSelectionOverlay);
+            if (!baseImage) return;
+
+            const inverseMatrix = fabric.util.invertTransform(baseImage.calcTransformMatrix());
+            const pointInImage = fabric.util.transformPoint(options.pointer, inverseMatrix);
+
+            const x = Math.floor(pointInImage.x);
+            const y = Math.floor(pointInImage.y);
+
+            if (x < 0 || y < 0 || x >= baseImage.width || y >= baseImage.height) return;
+
+            const { tolerance } = stateRef.current;
+            console.log(`Editor: Wand clicked [${x},${y}] tolerance [${tolerance}]`);
+            
+            const tempCanvas = document.createElement('canvas');
+            tempCanvas.width = baseImage.width;
+            tempCanvas.height = baseImage.height;
+            const tempCtx = tempCanvas.getContext('2d', { willReadFrequently: true })!;
+            tempCtx.drawImage(baseImage.getElement(), 0, 0, baseImage.width, baseImage.height);
+            const imageData = tempCtx.getImageData(0, 0, baseImage.width, baseImage.height);
+            
+            const selectionIndices = floodFill(imageData, x, y, tolerance);
+            
+            const selectionCanvas = document.createElement('canvas');
+            selectionCanvas.width = baseImage.width;
+            selectionCanvas.height = baseImage.height;
+            const selectionCtx = selectionCanvas.getContext('2d')!;
+            const selectionImageData = selectionCtx.createImageData(baseImage.width, baseImage.height);
+
+            for (const index of selectionIndices) {
+                selectionImageData.data[index * 4] = 0;
+                selectionImageData.data[index * 4 + 1] = 255;
+                selectionImageData.data[index * 4 + 2] = 0;
+                selectionImageData.data[index * 4 + 3] = 77;
+            }
+            selectionCtx.putImageData(selectionImageData, 0, 0);
+
+            if (selectionOverlayRef.current) {
+                fabricCanvasRef.current.remove(selectionOverlayRef.current);
+            }
+            
+            selectionOverlayRef.current = new fabric.Image(selectionCanvas, {
+                left: baseImage.left,
+                top: baseImage.top,
+                scaleX: baseImage.scaleX,
+                scaleY: baseImage.scaleY,
+                angle: baseImage.angle,
+                originX: baseImage.originX,
+                originY: baseImage.originY,
+                selectable: false,
+                evented: false,
+                isSelectionOverlay: true, 
+                selectionIndices: selectionIndices
+            });
+            
+            fabricCanvasRef.current.add(selectionOverlayRef.current);
+            fabricCanvasRef.current.renderAll();
+        };
         canvas.on('mouse:down', handleCanvasClick);
         
         const resizeObserver = new ResizeObserver(entries => {
-            const { width, height } = entries[0].contentRect;
-            canvas.setWidth(width).setHeight(height);
-            console.log(`Editor: Canvas sized [${width},${height}]`);
-            
-            const image = canvas.getObjects('image').find((o: any) => !o.isSelectionOverlay);
-            if (image) {
-                const scale = Math.min(width / image.width, height / image.height, 1);
-                image.scale(scale);
-                canvas.centerObject(image);
-                canvas.renderAll();
+            for (const entry of entries) {
+                const { width, height } = entry.contentRect;
+                canvas.setWidth(width).setHeight(height);
+                 console.log(`Editor: Canvas sized [${width},${height}]`);
+                const image = canvas.getObjects('image').find((o: any) => !o.isSelectionOverlay);
+                if (image) {
+                    const scale = Math.min(width / image.width, height / image.height) * 0.95;
+                    image.scale(scale);
+                    canvas.centerObject(image);
+                    canvas.renderAll();
+                }
             }
         });
         
@@ -204,18 +222,23 @@ export const PNGEditor: React.FC<PNGEditorProps> = ({ pngBase64, seed }) => {
         const img = new Image();
         img.src = `data:image/png;base64,${pngBase64}`;
         img.onload = () => {
+             if (!containerRef.current) return;
             fabric.Image.fromURL(img.src, (fabricImg: any) => {
-                const { width, height } = containerRef.current!.getBoundingClientRect();
-                const scale = Math.min(width / fabricImg.width, height / fabricImg.height, 1);
+                if (!containerRef.current) return;
+                const { width, height } = containerRef.current.getBoundingClientRect();
+                const scale = Math.min(width / fabricImg.width, height / fabricImg.height) * 0.95;
                 fabricImg.scale(scale);
-                fabricImg.set({ selectable: false, evented: false });
+                fabricImg.set({ selectable: false, evented: true }); // Make image evented
                 
+                canvas.clear();
                 canvas.add(fabricImg);
                 canvas.centerObject(fabricImg);
                 canvas.renderAll();
                 
-                console.log('Editor: PNG loaded, scaled, and centered.');
-                saveState();
+                console.log('Editor: PNG loaded, scaled, and centered');
+                const currentState = canvas.toDataURL({ format: 'png' });
+                setHistory([currentState]);
+                setHistoryIndex(0);
             });
         };
         
@@ -223,8 +246,9 @@ export const PNGEditor: React.FC<PNGEditorProps> = ({ pngBase64, seed }) => {
             resizeObserver.disconnect();
             canvas.off('mouse:down', handleCanvasClick);
             canvas.dispose();
+            fabricCanvasRef.current = null;
         };
-    }, [pngBase64, saveState]);
+    }, [pngBase64]);
     
     const handleFill = () => {
         if (!selectionOverlayRef.current) return;
@@ -278,20 +302,31 @@ export const PNGEditor: React.FC<PNGEditorProps> = ({ pngBase64, seed }) => {
     };
 
     const handleTrace = () => {
+        if (typeof ImageTracer === 'undefined' || !ImageTracer.imageToSVG) {
+            console.error("Editor: ImageTracer is not defined or not loaded correctly.");
+            return;
+        }
+        console.log(`Editor: ImageTracer ready for tracing.`);
+
         const baseImage = fabricCanvasRef.current.getObjects('image').find((o: any) => !o.isSelectionOverlay);
         if (!baseImage) return;
 
-        const potrace = new Potrace();
-        potrace.loadImage(baseImage.getElement(), (err: Error) => {
-            if (err) {
-                console.error('Potrace error:', err);
-                return;
-            }
-            const svg = potrace.getSVG();
-            const svgBlob = new Blob([svg], { type: 'image/svg+xml' });
-            const url = URL.createObjectURL(svgBlob);
-            window.open(url, '_blank');
-        });
+        const tempCanvas = document.createElement('canvas');
+        tempCanvas.width = baseImage.width;
+        tempCanvas.height = baseImage.height;
+        const tempCtx = tempCanvas.getContext('2d')!;
+        tempCtx.drawImage(baseImage.getElement(), 0, 0, baseImage.width, baseImage.height);
+        const imageData = tempCtx.getImageData(0, 0, baseImage.width, baseImage.height);
+
+        const traceOptions = {
+            ltres: 1,
+            qtres: 1,
+            pathomit: 8,
+            rightangleenhance: true,
+        };
+
+        const svgString = ImageTracer.imageToSVG(imageData, traceOptions);
+        downloadFile(svgString, `saasvg-pro-traced-${seed}.svg`, 'image/svg+xml');
     };
 
     return (
@@ -335,7 +370,18 @@ export const PNGEditor: React.FC<PNGEditorProps> = ({ pngBase64, seed }) => {
             </div>
             
             {/* Canvas Container */}
-            <div ref={containerRef} className="flex-grow bg-transparent rounded-lg w-full h-full min-h-[300px] md:min-h-0">
+            <div 
+                ref={containerRef} 
+                className="items-center justify-center bg-transparent rounded-lg"
+                style={{
+                    display: 'flex',
+                    flex: 1,
+                    width: '60vw',
+                    height: '60vh',
+                    minWidth: '400px',
+                    minHeight: '300px',
+                }}
+            >
                 <canvas ref={canvasRef} />
             </div>
 

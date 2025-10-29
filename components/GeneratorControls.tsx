@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { type GeneratorOptions, type GeneratorMode, type ColorInfo, type VectorizerOptions, type RunMode, type IllustrationMode } from '../services/types';
+import { type GeneratorOptions, type GeneratorMode, type ColorInfo, type RunMode, type IllustrationMode } from '../services/types';
 import { THEMES, NARRATIVES, ART_STYLES, ICON_ART_STYLES, ICON_THEMES, DEFAULT_PALETTE } from '../constants';
 import { cmykToHex, hexToCmyk } from '../lib/utils';
 
@@ -97,7 +97,6 @@ export const GeneratorControls: React.FC<GeneratorControlsProps> = ({ onSubmit, 
   const [mode, setMode] = useState<GeneratorMode>('nano');
   const [illustrationMode, setIllustrationMode] = useState<IllustrationMode>('illustrations');
   const [runMode, setRunMode] = useState<RunMode>('single');
-  const [generateSvg, setGenerateSvg] = useState(false);
   const [theme, setTheme] = useState(THEMES[3]); // Finance
   const [iconTheme, setIconTheme] = useState('Finance');
   const [narrative, setNarrative] = useState('Celebrating Success');
@@ -105,14 +104,6 @@ export const GeneratorControls: React.FC<GeneratorControlsProps> = ({ onSubmit, 
   const [seed, setSeed] = useState(28100);
   const [palette, setPalette] = useState<ColorInfo[]>(DEFAULT_PALETTE);
   const [simplicityLevel, setSimplicityLevel] = useState(5); // Default to Medium (5)
-
-  const [vectorizerOptions, setVectorizerOptions] = useState<VectorizerOptions>({
-      svgVersion: 'Tiny 1.2',
-      stacking: 'cut-outs',
-      curveTypes: ['C Bézier (cubic)', 'Arcs'],
-      gapFiller: true,
-      tolerance: 0.01
-  });
 
   const totalPercent = useMemo(() => palette.reduce((sum, color) => sum + color.percent, 0), [palette]);
 
@@ -154,26 +145,9 @@ export const GeneratorControls: React.FC<GeneratorControlsProps> = ({ onSubmit, 
     }
   };
   
-  const handleCurveTypeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { value, checked } = e.target;
-    setVectorizerOptions(prev => {
-        const newCurveTypes = checked 
-            ? [...prev.curveTypes, value] 
-            : prev.curveTypes.filter(t => t !== value);
-        return { ...prev, curveTypes: newCurveTypes };
-    });
-  };
-  
-  const getToleranceLabel = (value: number) => {
-    if (value <= 0.05) return 'Super Fine';
-    if (value <= 0.15) return 'Fine';
-    if (value <= 0.25) return 'Medium';
-    return 'Coarse';
-  }
-
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    onSubmit({ prompt, mode, illustrationMode, runMode, generateSvg, theme, iconTheme, narrative, style, seed, palette, vectorizerOptions, simplicityLevel });
+    onSubmit({ prompt, mode, illustrationMode, runMode, theme, iconTheme, narrative, style, seed, palette, simplicityLevel });
   };
 
   const OptionSelect: React.FC<{label: string, value: string, onChange: (e: React.ChangeEvent<HTMLSelectElement>) => void, options: string[] | readonly string[]}> = ({ label, value, onChange, options }) => (
@@ -280,71 +254,7 @@ export const GeneratorControls: React.FC<GeneratorControlsProps> = ({ onSubmit, 
                     <button type="button" onClick={() => setRunMode('batch')} className={`flex-1 py-1 rounded ${runMode === 'batch' ? 'bg-[#00D4AA] text-black font-semibold' : 'text-gray-300'}`}>Batch (4)</button>
                 </div>
             </div>
-            {mode === 'nano' && (
-                <div>
-                    <label className="text-sm font-medium text-gray-400 mb-1 block opacity-0">Actions</label>
-                    <div className="flex items-center bg-[#1A1A1A] p-2 rounded-md border border-gray-700 h-[42px]">
-                         <label className="flex items-center space-x-2 text-gray-300 cursor-pointer">
-                            <input type="checkbox" checked={generateSvg} onChange={(e) => setGenerateSvg(e.target.checked)} className="form-checkbox bg-[#2A2A2A] border-gray-600 text-[#00D4AA] focus:ring-[#00D4AA]" />
-                            <span>Generate SVG from PNG (via API)</span>
-                        </label>
-                    </div>
-                </div>
-            )}
         </div>
-
-        {mode === 'nano' && generateSvg && (
-             <fieldset className="border border-gray-800 rounded-lg p-4 space-y-4">
-                <legend className="text-sm font-medium text-gray-400 px-2">Vectorizer Options</legend>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {/* SVG Version & Stacking */}
-                    <div className="space-y-4">
-                         <OptionSelect label="SVG Version" value={vectorizerOptions.svgVersion} onChange={(e) => setVectorizerOptions(prev => ({...prev, svgVersion: e.target.value as VectorizerOptions['svgVersion']}))} options={['1.1 (Default)', 'Tiny 1.2']} />
-                         <div>
-                            <label className="text-sm font-medium text-gray-400 mb-2 block">Shape Stacking</label>
-                            <div className="flex items-center space-x-2 bg-[#1A1A1A] p-1 rounded-md border border-gray-700">
-                                <button type="button" onClick={() => setVectorizerOptions(prev => ({...prev, stacking: 'cut-outs'}))} className={`flex-1 py-1 rounded text-sm ${vectorizerOptions.stacking === 'cut-outs' ? 'bg-[#00D4AA] text-black font-semibold' : 'text-gray-300'}`}>Cut-outs</button>
-                                <button type="button" onClick={() => setVectorizerOptions(prev => ({...prev, stacking: 'stack on top'}))} className={`flex-1 py-1 rounded text-sm ${vectorizerOptions.stacking === 'stack on top' ? 'bg-[#00D4AA] text-black font-semibold' : 'text-gray-300'}`}>Stack on top</button>
-                            </div>
-                        </div>
-                    </div>
-                    {/* Curve Types & Gap Filler */}
-                    <div className="space-y-4">
-                        <div>
-                            <label className="text-sm font-medium text-gray-400 mb-2 block">Curve Types</label>
-                            <div className="grid grid-cols-2 gap-2 text-sm">
-                                {['Lines', 'Q Bézier (quadratic)', 'C Bézier (cubic)', 'Arcs'].map(type => (
-                                    <label key={type} className="flex items-center space-x-2 text-gray-300">
-                                        <input type="checkbox" value={type} checked={vectorizerOptions.curveTypes.includes(type)} onChange={handleCurveTypeChange} className="form-checkbox bg-[#2A2A2A] border-gray-600 text-[#00D4AA] focus:ring-[#00D4AA]" />
-                                        <span>{type}</span>
-                                    </label>
-                                ))}
-                            </div>
-                        </div>
-                         <div>
-                            <label className="flex items-center justify-between cursor-pointer">
-                                <span className="text-sm font-medium text-gray-400">Gap Filler</span>
-                                <div className="relative">
-                                    <input type="checkbox" checked={vectorizerOptions.gapFiller} onChange={(e) => setVectorizerOptions(prev => ({...prev, gapFiller: e.target.checked}))} className="sr-only peer" />
-                                    <div className="w-11 h-6 bg-gray-600 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#00D4AA]"></div>
-                                </div>
-                            </label>
-                             <p className="text-xs text-gray-500 mt-1">Fill gaps w/ non-scaling stroke (1.5px)</p>
-                        </div>
-                    </div>
-                    {/* Tolerance Slider */}
-                    <div>
-                        <label htmlFor="tolerance" className="text-sm font-medium text-gray-400 mb-2 block">Tolerance</label>
-                        <input id="tolerance" type="range" min="0.01" max="0.30" step="0.01" value={vectorizerOptions.tolerance} onChange={(e) => setVectorizerOptions(prev => ({...prev, tolerance: Number(e.target.value)}))} className="w-full h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer" />
-                        <div className="flex justify-between text-xs text-gray-500 mt-1">
-                            <span>Super Fine</span>
-                            <span className="font-bold text-gray-300">{getToleranceLabel(vectorizerOptions.tolerance)} ({vectorizerOptions.tolerance}px)</span>
-                             <span>Coarse</span>
-                        </div>
-                    </div>
-                </div>
-            </fieldset>
-        )}
 
         {/* Color Palette Editor */}
         <div className="space-y-3">

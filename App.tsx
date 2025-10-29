@@ -3,58 +3,13 @@ import { Header } from './components/Header';
 import { GeneratorControls } from './components/GeneratorControls';
 import { ResultsGrid } from './components/ResultsGrid';
 import { Spinner } from './components/Spinner';
-// FIX: `VectorizerOptions` is a type and should be imported with `type`.
-import { type GeneratorOptions, type Asset, type ApiChoice, type VectorizerOptions } from './services/types';
+import { type GeneratorOptions, type Asset } from './services/types';
 import { generateSVGs } from './services/geminiService';
-import { ApiKeyModal } from './components/ApiKeyModal';
-
-interface ApiKeys {
-  apiChoice: ApiChoice;
-  vectorizerID?: string;
-  vectorizerSecret?: string;
-  recraftToken?: string;
-}
 
 const App: React.FC = () => {
   const [results, setResults] = useState<Asset[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
-  const [apiKeys, setApiKeys] = useState<ApiKeys | null>(null);
-  const [showKeyModal, setShowKeyModal] = useState(false);
-
-  useEffect(() => {
-    const choice = (localStorage.getItem('apiChoice') as ApiChoice) || 'vectorizer';
-    const vectorizerID = localStorage.getItem('vectorizerID') || undefined;
-    const vectorizerSecret = localStorage.getItem('vectorizerSecret') || undefined;
-    const recraftToken = localStorage.getItem('recraftToken') || undefined;
-
-    const loadedKeys: ApiKeys = {
-      apiChoice: choice,
-      vectorizerID,
-      vectorizerSecret,
-      recraftToken
-    };
-    
-    setApiKeys(loadedKeys);
-  }, []);
-
-  const handleSaveKeys = (savedKeys: ApiKeys) => {
-    localStorage.setItem('apiChoice', savedKeys.apiChoice);
-
-    if (savedKeys.apiChoice === 'vectorizer') {
-      localStorage.setItem('vectorizerID', savedKeys.vectorizerID || '');
-      localStorage.setItem('vectorizerSecret', savedKeys.vectorizerSecret || '');
-      localStorage.removeItem('recraftToken');
-    } else if (savedKeys.apiChoice === 'recraft') {
-      localStorage.setItem('recraftToken', savedKeys.recraftToken || '');
-      localStorage.removeItem('vectorizerID');
-      localStorage.removeItem('vectorizerSecret');
-    }
-    
-    setApiKeys(savedKeys);
-    setShowKeyModal(false);
-  };
-
 
   const showToast = (message: string) => {
     setToastMessage(message);
@@ -64,34 +19,15 @@ const App: React.FC = () => {
   };
 
   const handleGenerate = useCallback(async (options: Omit<GeneratorOptions, 'apiChoice' | 'vectorizerID' | 'vectorizerSecret' | 'recraftToken'>) => {
-    if (options.mode === 'nano' && options.generateSvg) {
-      const keysAreSet = (apiKeys?.apiChoice === 'vectorizer' && apiKeys.vectorizerID && apiKeys.vectorizerSecret) ||
-                         (apiKeys?.apiChoice === 'recraft' && apiKeys.recraftToken);
-      if (!keysAreSet) {
-        setShowKeyModal(true);
-        return;
-      }
-    }
-    
     setIsLoading(true);
     setResults([]);
     setToastMessage(`Generating with ${options.mode} mode...`);
 
     try {
-      const fullOptions: GeneratorOptions = {
-        ...options,
-        ...apiKeys,
-        apiChoice: apiKeys?.apiChoice || 'vectorizer',
-      };
-      const assets = await generateSVGs(fullOptions, (status) => {
+      const assets = await generateSVGs(options, (status) => {
         setToastMessage(status);
       });
       
-      const svgFailed = options.mode === 'nano' && options.generateSvg && assets.some(a => a.png && !a.svg);
-      if (svgFailed) {
-        showToast('SVG conversion failed—showing PNG fallback.');
-      }
-
       setResults(assets);
     } catch (error) {
       console.error('Generation failed:', error);
@@ -104,11 +40,7 @@ const App: React.FC = () => {
         setToastMessage(null);
       }
     }
-  }, [apiKeys, toastMessage]);
-
-  if (showKeyModal) {
-    return <ApiKeyModal onSave={handleSaveKeys} initialKeys={apiKeys || undefined} />;
-  }
+  }, [toastMessage]);
 
   return (
     <div className="min-h-screen bg-[#0A0A0A] text-gray-100 font-sans">

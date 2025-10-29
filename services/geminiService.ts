@@ -1,139 +1,101 @@
 import { GoogleGenAI, Modality, GenerateContentResponse } from '@google/genai';
-// FIX: `VectorizerOptions` is a type and should be imported with `type`.
-import { type GeneratorOptions, type Asset, type VectorizerOptions } from './types';
+import ImageTracer from 'imagetracerjs';
+import { type GeneratorOptions, type Asset } from './types';
 import { NANO_PROMPT_TEMPLATE, ART_STYLES, NARRATIVES, ICON_ART_STYLES, ICON_THEMES, ICON_PROMPT_TEMPLATE } from '../constants';
 
-// --- Start of External API Implementations ---
-
 /**
- * Calls the Vectorizer.ai API to convert a PNG to an SVG.
+ * Converts a raster image (PNG) to an SVG string using imagetracer.js.
+ * Includes pre-processing for low-contrast images to improve trace results.
  */
-const vectorizeWithVectorizerAI = async (
-  pngBase64: string,
-  options: GeneratorOptions,
-  updateStatus: (status: string) => void
+const rasterToSVG = (
+    pngBase64: string,
+    updateStatus: (status: string) => void
 ): Promise<string> => {
-  updateStatus('Phase 2/3: Vectorizing with Vectorizer.ai...');
-  const { vectorizerID, vectorizerSecret } = options;
-  if (!vectorizerID || !vectorizerSecret) throw new Error('Vectorizer.ai credentials are not set.');
+    return new Promise((resolve) => {
+        updateStatus('Phase 2/3: Tracing PNG to SVG locally...');
 
-  const byteString = atob(pngBase64);
-  const ab = new ArrayBuffer(byteString.length);
-  const ia = new Uint8Array(ab);
-  for (let i = 0; i < byteString.length; i++) {
-    ia[i] = byteString.charCodeAt(i);
-  }
-  const blob = new Blob([ab], { type: 'image/png' });
+        const img = new Image();
+        img.onload = () => {
+            const canvas = document.createElement('canvas');
+            canvas.width = img.width;
+            canvas.height = img.height;
+            const ctx = canvas.getContext('2d', { willReadFrequently: true });
+            if (!ctx) {
+                console.error("Could not get canvas context for tracing.");
+                resolve('');
+                return;
+            }
+            ctx.drawImage(img, 0, 0);
+            const imageData = ctx.getImageData(0, 0, img.width, img.height);
 
-  const formData = new FormData();
-  formData.append('image', blob);
-  // NOTE: Vectorizer.ai API options are limited. We are not passing vectorizerOptions for now.
+            // FIX: Add check for invalid or empty imageData to prevent crashes.
+            if (!imageData || !imageData.data || imageData.data.length === 0) {
+                console.error("Invalid imageData, fallback");
+                resolve('<svg viewBox="0 0 400 300"><rect width="400" height="300" fill="#F0F0F0" stroke="#CCC" stroke-width="2"/></svg>');
+                return;
+            }
+            
+            console.log('ImageData.data sample: ' + imageData.data?.slice(0,100) + '...');
 
-  const response = await fetch('https://vectorizer.ai/api/v1/vectorize', {
-    method: 'POST',
-    headers: {
-      Authorization: 'Basic ' + btoa(`${vectorizerID}:${vectorizerSecret}`),
-    },
-    body: formData,
-  });
+            const data = imageData.data;
 
-  if (!response.ok) {
-    const errorBody = await response.text();
-    console.error('Vectorizer.ai API Error:', errorBody);
-    throw new Error(`Vectorizer.ai failed: ${response.statusText}`);
-  }
+            // 1. Calculate variance to detect low-contrast images
+            let sum = 0, sumSq = 0;
+            for (let i = 0; i < data.length; i += 4) {
+                const luminance = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+                sum += luminance;
+                sumSq += luminance * luminance;
+            }
+            const numPixels = data.length / 4;
+            const mean = sum / numPixels;
+            const variance = (sumSq / numPixels) - (mean * mean);
+            console.log('Trace variance: ' + variance);
 
-  return response.text();
-};
+            // 2. Pre-process for low variance
+            if (variance < 5000) {
+                console.log('Low variance, boosting contrast for tracing.');
+                let nonZeroPost = 0;
+                for (let i = 0; i < data.length; i += 4) {
+                    const r_inv = 255 - data[i];
+                    const g_inv = 255 - data[i + 1];
+                    const b_inv = 255 - data[i + 2];
+                    const finalVal = (r_inv + g_inv + b_inv) / 3 > 200 ? 0 : 255;
+                    data[i] = data[i + 1] = data[i + 2] = finalVal;
+                    if (finalVal > 0) nonZeroPost++;
+                }
+                console.log('Post-boost non-zero pixels: ' + nonZeroPost);
+                ctx.putImageData(imageData, 0, 0);
+            }
 
-
-/**
- * Calls the Replicate API to use the Recraft model for vectorization.
- * This is a two-step process: start the job, then poll for the result.
- */
-const vectorizeWithRecraft = async (
-  pngBase64: string,
-  options: GeneratorOptions,
-  updateStatus: (status: string) => void
-): Promise<string> => {
-  updateStatus('Phase 2/3: Vectorizing with Recraft.ai...');
-  const { recraftToken } = options;
-  if (!recraftToken) throw new Error('Recraft.ai (Replicate) token is not set.');
-
-  const REPLICATE_API_URL = 'https://api.replicate.com/v1/predictions';
-  const REPLICATE_MODEL_VERSION = '248d564195195b0c0316d3f20f0442eaaa4f5148a1b5be7f61b0c07d389a1c1d';
-
-  // Step 1: Start the prediction
-  const startResponse = await fetch(REPLICATE_API_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Token ${recraftToken}`,
-    },
-    body: JSON.stringify({
-      version: REPLICATE_MODEL_VERSION,
-      input: {
-        image: `data:image/png;base64,${pngBase64}`,
-        mode: 'vector_illustration', // Recraft-specific option
-      },
-    }),
-  });
-
-  if (!startResponse.ok) {
-    const errorBody = await startResponse.json();
-    console.error('Replicate API Error (start):', errorBody);
-    throw new Error(`Replicate failed to start: ${startResponse.statusText}`);
-  }
-
-  const prediction = await startResponse.json();
-  const predictionId = prediction.id;
-  
-  // Step 2: Poll for the result with timeout
-  let finalResult = null;
-  const startTime = Date.now();
-  const timeout = 180000; // 3 minutes timeout
-
-  while (!finalResult) {
-    if (Date.now() - startTime > timeout) {
-      throw new Error('Recraft.ai vectorization timed out after 3 minutes.');
-    }
-
-    updateStatus('Phase 2/3: Polling Recraft.ai for result...');
-    await new Promise(resolve => setTimeout(resolve, 2000)); // wait 2s between polls
-    
-    const pollResponse = await fetch(`${REPLICATE_API_URL}/${predictionId}`, {
-      headers: { Authorization: `Token ${recraftToken}` }
+            // 3. Fine-tuned imagetracerjs options for stability
+            const traceOptions = {
+                ltres: 0.5, 
+                qtres: 0.5, 
+                pathomit: 5,
+                numberofcolors: 8,
+            };
+            
+            const svgStr = ImageTracer.imageToSVG(imageData, traceOptions);
+            
+            // 4. Check for empty or invalid output
+            if (typeof svgStr !== 'string' || !svgStr || svgStr === 'empty' || svgStr.length < 50 || !svgStr.includes('<path')) {
+                console.error("Raw empty/invalid SVG from imagetracer:", svgStr ? svgStr.substring(0, 100) : String(svgStr));
+                updateStatus('SVG conversion failed—showing PNG fallback.');
+                resolve('');
+            } else {
+                console.log(`SVG length: ${svgStr.length}`);
+                updateStatus('Phase 3/3: Finalizing asset...');
+                resolve(svgStr);
+            }
+        };
+        img.onerror = () => {
+            console.error("Could not load PNG image for tracing.");
+            resolve('');
+        };
+        img.src = `data:image/png;base64,${pngBase64}`;
     });
-    
-    if (!pollResponse.ok) {
-      const errorText = await pollResponse.text();
-      console.error('Replicate API Error (poll):', errorText);
-      throw new Error(`Replicate polling failed with status: ${pollResponse.statusText}`);
-    }
-    
-    const pollResult = await pollResponse.json();
-
-    if (pollResult.status === 'succeeded') {
-      finalResult = pollResult.output;
-      break;
-    } else if (pollResult.status === 'failed' || pollResult.status === 'canceled') {
-      console.error('Replicate API Error (poll):', pollResult.error);
-      throw new Error(`Replicate job failed: ${pollResult.error}`);
-    }
-    // If status is 'starting' or 'processing', the loop continues, which is correct.
-  }
-
-  // Step 3: Fetch the SVG from the result URL
-  if (!finalResult || !Array.isArray(finalResult) || finalResult.length === 0) {
-    throw new Error('Recraft.ai returned an empty or invalid result.');
-  }
-
-  const svgUrl = finalResult[0];
-  const svgResponse = await fetch(svgUrl);
-  if (!svgResponse.ok) throw new Error('Failed to download final SVG from Recraft.ai URL.');
-
-  return svgResponse.text();
 };
+
 
 /**
  * Generates a single asset based on the provided options.
@@ -150,7 +112,7 @@ const generateSingleAsset = async (
     .join(', ');
   // @ts-ignore
   const seedHash = CryptoJS.MD5(options.seed.toString()).toString();
-  const styleSeedString = `Fixed style guide: Reproduce the exact composition, arrangement, shapes, edges, poses, and style from seed ${seedHash}. There must be no variations or changes. The output must be identical to a previous generation that used this exact seed and palette: [${paletteListRatios}].`;
+  const styleSeedString = `lock exact composition, shapes, arrangement, and style to seed hash ${seedHash}—no variations, reproduce previous gen with this seed and palette [${paletteListRatios}].`;
 
   console.log(`Seed lock injected for [${options.seed}]: temperature 0, top_p 0`);
 
@@ -193,7 +155,7 @@ const generateSingleAsset = async (
 
   if (options.mode === 'nano') {
     // Phase 1: Generate PNG with Gemini
-    updateStatus('Phase 1/3: Generating base PNG with Gemini Nano...');
+    updateStatus('Phase 1/1: Generating base PNG with Gemini Nano...');
     
     // --- New Palette Injection Logic ---
     let paletteInjectionString = '';
@@ -248,6 +210,7 @@ const generateSingleAsset = async (
     console.log(`Mode: ${options.illustrationMode}`, `Style: ${options.style}`);
 
     const finalNanoPrompt = `${nanoPrompt}\n${styleSeedString}`;
+    console.log('Full Nano Prompt:', finalNanoPrompt);
     
     const imageResponse: GenerateContentResponse = await ai.models.generateContent({
       model: 'gemini-2.5-flash-image',
@@ -271,31 +234,9 @@ const generateSingleAsset = async (
         throw new Error('Gemini did not return an image for vectorization.');
     }
     
-    // If SVG generation is not requested, return only the PNG.
-    if (!options.generateSvg) {
-        updateStatus('PNG generation complete.');
-        return { svg: '', png: pngBase64, seed: options.seed };
-    }
-
-    // Phase 2: Vectorize PNG using the selected external API
-    let svg = '';
-    try {
-        if (options.apiChoice === 'vectorizer') {
-            svg = await vectorizeWithVectorizerAI(pngBase64, options, updateStatus);
-        } else if (options.apiChoice === 'recraft') {
-            svg = await vectorizeWithRecraft(pngBase64, options, updateStatus);
-        } else {
-            throw new Error('No valid API provider chosen for Nano mode.');
-        }
-    } catch(error) {
-        console.error('Primary vectorization API failed. Fallback to PNG only.', error);
-        console.log('Fallback triggered');
-        // On failure, return the asset with only the PNG. The UI will handle the toast.
-        return { svg: '', png: pngBase64, seed: options.seed };
-    }
-
-    updateStatus('Phase 3/3: Finalizing asset...');
-    return { svg, png: pngBase64, seed: options.seed };
+    // Tracing is disabled globally. Always return the PNG for Nano mode.
+    updateStatus('PNG generation complete.');
+    return { svg: '', png: pngBase64, seed: options.seed };
   }
   
   // Should not be reached
