@@ -52,9 +52,9 @@ export const ICON_ART_STYLES: Record<string, { description: string; fewShot: str
         description: 'simple editable 3D isometric icon in Icons8 style, with extruded shapes, soft shadows, vibrant pastels, few bezier curves, and modular layers. No humans.',
         fewShot: 'a 3D isometric chart with rounded edges and minimal shadows, in pastel blue',
     },
-    'playful-3d': {
-        description: 'playful 3D isometric icon without humans, featuring low-poly objects with a bouncy feel, vibrant gradients, and modular shapes.',
-        fewShot: 'a playful 3D isometric floating bar chart with coins and rounded edges, no figures',
+    '3d-playful': {
+        description: '3D playful isometric vector icon without humans, featuring modular low-poly rounded objects with soft shadows and vibrant pastels.',
+        fewShot: 'A 3D isometric credit card with an NFC chip, a purple X button, and green arrows/buttons, viewed from an angled perspective with rounded edges.',
     },
     'sleek-3d': {
         description: 'sleek 3D isometric icon without humans, with extruded depth, soft shadows, and neutral blue/green colors, suitable for finance themes.',
@@ -82,14 +82,16 @@ The illustration must be 400x300 pixels.
 `;
 
 export const ICON_PROMPT_TEMPLATE = `
-Generate a single, simple, editable, 3D isometric icon with a transparent background (alpha channel) and no white fill.
-The icon is for the '[iconTheme]' industry.
-The main subject is a '[prompt]'.
-The art style is '[style]', which is described as: [styleDescription]. A good example is "[styleFewShot]".
-The icon must be minimal, with a maximum of [simplicityLevel] distinct visual elements. Avoid clutter like extra props (e.g., no piggy banks or coins unless they are the main subject). The result should be clean with few paths, suitable for editing in Figma.
-The icon must not contain any humans, text, or complex narratives.
-Use this exact color palette: [colors].
-The final image must be a 400x300 PNG.
+Generate a 3D isometric icon in the style of an image described as "[styleFewShot]".
+The icon must be a simple, minimal representation of a '[prompt]' for the '[iconTheme]' industry.
+Technical requirements:
+- Transparent background with alpha channel (no white fill).
+- Maximum of [simplicityLevel] distinct visual elements.
+- No humans, text, or visual clutter (e.g., extra props like coins or steam).
+- Focus on the core object.
+- Clean lines with few paths, optimized for Figma editing.
+- Use this exact color palette: [colors].
+- The final image must be a 400x300 PNG.
 `;
 
 

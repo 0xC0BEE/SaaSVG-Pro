@@ -48,6 +48,15 @@ const ColorEditorRow: React.FC<{
                 )}
             </div>
             <div className="flex-1">
+                <label className="text-xs text-gray-400">Hex</label>
+                <input 
+                    type="text"
+                    value={color.hex}
+                    onChange={handleHexChange}
+                    className="w-full bg-[#1A1A1A] border border-gray-600 rounded text-xs px-2 py-1"
+                />
+            </div>
+            <div className="flex-1">
                 <label className="text-xs text-gray-400">CMYK</label>
                 <input 
                     type="text"
@@ -56,7 +65,7 @@ const ColorEditorRow: React.FC<{
                     className="w-full bg-[#1A1A1A] border border-gray-600 rounded text-xs px-2 py-1"
                 />
             </div>
-             <div className="flex-1">
+             <div className="w-24">
                 <label className="text-xs text-gray-400">Category</label>
                 <select
                     value={color.category}
@@ -107,13 +116,18 @@ export const GeneratorControls: React.FC<GeneratorControlsProps> = ({ onSubmit, 
 
   const totalPercent = useMemo(() => palette.reduce((sum, color) => sum + color.percent, 0), [palette]);
 
+  // Log seed changes for user feedback
+  useEffect(() => {
+    console.log(`Style locked on seed [${seed}]`);
+  }, [seed]);
+
   // When switching between illustrations and icons, set a default style for the new mode.
   useEffect(() => {
     if (illustrationMode === 'icons') {
-      setStyle(Object.keys(ICON_ART_STYLES)[0]);
-      setPrompt('3D isometric finance chart icon');
+      setStyle('3d-playful');
+      setPrompt('transaction cancelled credit card icon');
     } else {
-      setStyle(Object.keys(ART_STYLES)[1]); // 'undraw'
+      setStyle('undraw');
       setPrompt('a diverse analyst celebrating the successful launch of a new feature on their dashboard');
     }
   }, [illustrationMode]);
@@ -195,13 +209,16 @@ export const GeneratorControls: React.FC<GeneratorControlsProps> = ({ onSubmit, 
               placeholder={illustrationMode === 'icons' ? 'Enter icon description...' : 'Enter your SVG prompt...'}
               className="flex-grow bg-[#1A1A1A] border border-gray-700 rounded-md px-4 py-3 text-white placeholder-gray-500 focus:ring-2 focus:ring-[#00D4AA] focus:border-[#00D4AA] outline-none"
             />
-             <input
-              type="number"
-              value={seed}
-              onChange={(e) => setSeed(Number(e.target.value))}
-              placeholder="Seed"
-              className="w-32 bg-[#1A1A1A] border border-gray-700 rounded-md px-4 py-3 text-white placeholder-gray-500 focus:ring-2 focus:ring-[#00D4AA] focus:border-[#00D4AA] outline-none"
-            />
+            <div>
+              <input
+                type="number"
+                value={seed}
+                onChange={(e) => setSeed(Number(e.target.value))}
+                placeholder="Seed"
+                className="w-32 bg-[#1A1A1A] border border-gray-700 rounded-md px-4 py-3 text-white placeholder-gray-500 focus:ring-2 focus:ring-[#00D4AA] focus:border-[#00D4AA] outline-none"
+              />
+              <p className="text-xs text-gray-500 mt-1 pl-1 w-32">Style locked on seed {seed}—exact remix ready.</p>
+            </div>
         </div>
         
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 items-end">

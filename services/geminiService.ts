@@ -144,6 +144,16 @@ const generateSingleAsset = async (
   updateStatus: (status: string) => void
 ): Promise<Asset> => {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY! });
+  
+  const paletteListRatios = options.palette
+    .map(c => `${c.hex} ${c.percent}%`)
+    .join(', ');
+  // @ts-ignore
+  const seedHash = CryptoJS.MD5(options.seed.toString()).toString();
+  const styleSeedString = `Fixed style guide: Reproduce the exact composition, arrangement, shapes, edges, poses, and style from seed ${seedHash}. There must be no variations or changes. The output must be identical to a previous generation that used this exact seed and palette: [${paletteListRatios}].`;
+
+  console.log(`Seed lock injected for [${options.seed}]: temperature 0, top_p 0`);
+
 
   if (options.mode === 'classic') {
     updateStatus('Generating SVG with Gemini Classic...');
@@ -158,12 +168,16 @@ const generateSingleAsset = async (
       The scene should depict: A ${NARRATIVES[options.narrative as keyof typeof NARRATIVES]} ${options.theme} scene.
       ${colorPrompt}
       Primary subject: ${options.prompt}.
-      The output should be only the raw SVG code, with no other text, explanation, or markdown formatting.
+      ${styleSeedString}
     `;
     
     const response: GenerateContentResponse = await ai.models.generateContent({
         model: 'gemini-2.5-pro',
         contents: classicPrompt,
+        config: {
+            temperature: 0,
+            topP: 0,
+        }
     });
     
     let svg = response.text;
@@ -180,33 +194,46 @@ const generateSingleAsset = async (
   if (options.mode === 'nano') {
     // Phase 1: Generate PNG with Gemini
     updateStatus('Phase 1/3: Generating base PNG with Gemini Nano...');
-    const colorPrompt = `Use this exact color palette: ${options.palette
-        .map(c => c.hex)
-        .join(', ')}.`;
+    
+    // --- New Palette Injection Logic ---
+    let paletteInjectionString = '';
+    const totalPercent = options.palette.reduce((sum, p) => sum + p.percent, 0);
 
+    if (totalPercent > 0) {
+        const normalizedPalette = options.palette.map(p => ({
+            ...p,
+            percent: Math.round((p.percent / totalPercent) * 100)
+        }));
+
+        const paletteList = normalizedPalette
+            .map(c => `${c.category} ${c.hex} ${c.percent}%`)
+            .join(', ');
+            
+        paletteInjectionString = `Strictly recolor the exact composition, arrangement, and style from seed ${options.seed} using only this new palette [${paletteList}]. Make no changes to shapes, edges, or poses. Use dominant primary colors for main elements and secondary for accents. Do not introduce any other hues or colors. The final image should be vibrant and high-contrast.`;
+        
+    } else {
+        paletteInjectionString = 'Use a vibrant, high-contrast color palette.';
+    }
+    
     let nanoPrompt = '';
     
     if (options.illustrationMode === 'icons') {
         const artStyle = ICON_ART_STYLES[options.style];
         if (!artStyle) throw new Error(`Invalid icon style selected: ${options.style}`);
-
-        const colorString = options.palette.map(c => c.hex).join(', ');
         
         nanoPrompt = ICON_PROMPT_TEMPLATE
-            .replace('[iconTheme]', options.iconTheme)
-            .replace('[prompt]', options.prompt)
-            .replace('[style]', options.style)
-            .replace('[styleDescription]', artStyle.description)
             .replace('[styleFewShot]', artStyle.fewShot)
+            .replace('[prompt]', options.prompt)
+            .replace('[iconTheme]', ICON_THEMES[options.iconTheme])
             .replace('[simplicityLevel]', options.simplicityLevel.toString())
-            .replace('[colors]', colorString);
+            .replace('[colors]', paletteInjectionString);
             
         console.log('Icons mode prompt constructed.');
 
     } else { // 'illustrations' mode
         const narrativeText = NARRATIVES[options.narrative as keyof typeof NARRATIVES];
         const artStyle = ART_STYLES[options.style];
-        let injectedSnippet = `Generate in ${options.style} style. Style description: ${artStyle.description}. The image should depict a ${narrativeText} ${options.theme} scene. A good example of the style is "${artStyle.fewShot}".`;
+        let injectedSnippet = `Generate a vibrant undraw-style illustration in ${options.style} style. Style description: ${artStyle.description}. The image should depict a ${narrativeText} ${options.theme} scene. A good example of the style is "${artStyle.fewShot}".`;
 
         if (['sleek-3d-finance', 'playful-modular-3d', 'chromium-effect'].includes(options.style)) {
             injectedSnippet += ' The final illustration must not contain any humans or human-like figures.';
@@ -214,19 +241,23 @@ const generateSingleAsset = async (
         
         nanoPrompt = NANO_PROMPT_TEMPLATE
             .replace('[injected_snippet]', injectedSnippet)
-            .replace('[colors]', colorPrompt)
+            .replace('[colors]', paletteInjectionString)
             .replace('[prompt]', options.prompt);
     }
     
     console.log(`Mode: ${options.illustrationMode}`, `Style: ${options.style}`);
+
+    const finalNanoPrompt = `${nanoPrompt}\n${styleSeedString}`;
     
     const imageResponse: GenerateContentResponse = await ai.models.generateContent({
       model: 'gemini-2.5-flash-image',
       contents: {
-        parts: [{ text: nanoPrompt }],
+        parts: [{ text: finalNanoPrompt }],
       },
       config: {
           responseModalities: [Modality.IMAGE],
+          temperature: 0,
+          topP: 0,
       },
     });
 
