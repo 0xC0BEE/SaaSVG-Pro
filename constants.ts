@@ -79,8 +79,8 @@ export const ICON_THEMES: Record<string, string> = {
 
 
 export const NANO_PROMPT_TEMPLATE = `
-Generate a high-contrast, minimalist PNG illustration with bold outlines, flat color fills, and sharp, clean edges, ideal for vector tracing.
-CRITICAL: The object must be placed on a solid, uniform, single-color green (#00FF00) background. There must be no shadows, gradients, or other elements in the background.
+Generate a minimalist PNG illustration with bold outlines, flat color fills, and sharp, clean edges, ideal for vector tracing.
+CRITICAL REQUIREMENT: The background MUST be a pure solid green color (#00FF00). It must be perfectly uniform. NO textures, NO patterns, NO gradients, NO shadows. This is for automated background removal and is non-negotiable.
 [injected_snippet]
 [colors]
 Primary subject: [prompt].
@@ -91,7 +91,7 @@ export const ICON_PROMPT_TEMPLATE = `
 Generate a 3D isometric icon in the style of an image described as "[styleFewShot]".
 The icon must be a simple, minimal representation of a '[prompt]' for the '[iconTheme]' industry.
 Technical requirements:
-- CRITICAL: Place the icon on a solid, uniform, single-color green (#00FF00) background. There must be no shadows, gradients, or other elements in the background. This is for automated background removal.
+- CRITICAL REQUIREMENT: The background MUST be a pure solid green color (#00FF00). It must be perfectly uniform. NO textures, NO patterns, NO gradients, NO shadows. This is for automated background removal and is non-negotiable.
 - Maximum of [simplicityLevel] distinct visual elements.
 - No humans, text, or visual clutter (e.g., extra props like coins or steam).
 - Focus on the core object.

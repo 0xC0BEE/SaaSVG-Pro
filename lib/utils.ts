@@ -87,17 +87,23 @@ export const removeGreenScreen = (pngBase64: string): Promise<string> => {
       const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
       const data = imageData.data;
       
-      const r_max = 100;
-      const g_min = 150;
-      const b_max = 100;
+      const hardThreshold = 40; // Greenness above this is definitely background
+      const softThreshold = 20; // Greenness above this starts to fade out
 
       for (let i = 0; i < data.length; i += 4) {
         const r = data[i];
         const g = data[i + 1];
         const b = data[i + 2];
         
-        if (r < r_max && g > g_min && b < b_max) {
-          data[i + 3] = 0; // Set alpha to 0
+        // Calculate "greenness" as how much greener the pixel is than red or blue.
+        const greenness = g - Math.max(r, b);
+
+        if (greenness > hardThreshold) {
+          data[i + 3] = 0; // Set alpha to 0 (fully transparent)
+        } else if (greenness > softThreshold) {
+          // Fade out for pixels in the soft threshold range (for anti-aliasing)
+          const alphaMultiplier = 1 - ((greenness - softThreshold) / (hardThreshold - softThreshold));
+          data[i + 3] = Math.floor(data[i + 3] * alphaMultiplier);
         }
       }
       ctx.putImageData(imageData, 0, 0);

@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { type Asset } from '../services/types';
 import { downloadFile, downloadBase64File, removeGreenScreen } from '../lib/utils';
@@ -8,11 +9,12 @@ import { Spinner } from './Spinner';
 
 interface AssetCardProps {
   asset: Asset;
+  previewBackgroundColor: string;
 }
 
 type ViewMode = 'svg' | 'png';
 
-export const AssetCard: React.FC<AssetCardProps> = ({ asset }) => {
+export const AssetCard: React.FC<AssetCardProps> = ({ asset, previewBackgroundColor }) => {
   const [viewMode, setViewMode] = useState<ViewMode>(asset.png && !asset.svg ? 'png' : 'svg');
   const [processedPngSrc, setProcessedPngSrc] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -53,8 +55,12 @@ export const AssetCard: React.FC<AssetCardProps> = ({ asset }) => {
 
   return (
     <div className="bg-[#121212] border border-gray-800 rounded-lg overflow-hidden transition-all duration-300 hover:shadow-2xl hover:shadow-[#00D4AA]/10 hover:border-[#00D4AA]/30">
-      <div className="aspect-square w-full flex items-center justify-center p-2">
-        <div className="w-full h-full p-6 flex items-center justify-center transition-transform duration-300 ease-in-out hover:scale-105">
+      <div className="aspect-square w-full flex items-center justify-center p-2 relative">
+        <div 
+          className="absolute inset-0"
+          style={{ backgroundColor: previewBackgroundColor }}
+        />
+        <div className="w-full h-full p-6 flex items-center justify-center transition-transform duration-300 ease-in-out hover:scale-105 relative">
           {viewMode === 'svg' && asset.svg ? (
             <div 
               className="w-full h-full text-white [&>svg]:w-full [&>svg]:h-full"
