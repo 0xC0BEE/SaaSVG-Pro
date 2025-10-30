@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { type GeneratorOptions, type GeneratorMode, type ColorInfo, type RunMode, type IllustrationMode } from '../services/types';
 import { THEMES, NARRATIVES, ART_STYLES, ICON_ART_STYLES, ICON_THEMES, DEFAULT_PALETTE } from '../constants';
 import { cmykToHex, hexToCmyk } from '../lib/utils';
@@ -16,6 +16,21 @@ const ColorEditorRow: React.FC<{
     onRemove: (id: number) => void;
 }> = ({ color, onUpdate, onRemove }) => {
     const [showPicker, setShowPicker] = useState(false);
+    const pickerRef = useRef<HTMLDivElement>(null);
+
+    // Close picker on outside click
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (pickerRef.current && !pickerRef.current.contains(event.target as Node)) {
+                setShowPicker(false);
+            }
+        };
+
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => {
+            document.removeEventListener('mousedown', handleClickOutside);
+        };
+    }, []);
 
     const handleHexChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const newHex = e.target.value;
@@ -26,18 +41,29 @@ const ColorEditorRow: React.FC<{
         const newCmyk = e.target.value;
         onUpdate(color.id, { cmyk: newCmyk, hex: cmykToHex(newCmyk) });
     };
+
+    const handlePercentChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        let value = parseInt(e.target.value, 10);
+        if (!isNaN(value)) {
+            value = Math.max(0, Math.min(100, value));
+        }
+        onUpdate(color.id, { percent: isNaN(value) ? 0 : value });
+    };
     
     return (
         <div className="flex items-center gap-3 p-2 bg-[#2A2A2A] rounded-md">
-            <div className="relative">
+            <div className="relative" ref={pickerRef}>
                 <button
                     type="button"
                     className="w-8 h-8 rounded border-2 border-gray-500"
                     style={{ backgroundColor: color.hex }}
-                    onClick={() => setShowPicker(!showPicker)}
+                    onMouseDown={(e) => {
+                        e.stopPropagation(); // Prevent document click listener from firing immediately
+                        setShowPicker(prev => !prev);
+                    }}
                 />
                 {showPicker && (
-                    <div className="absolute z-10 top-full mt-1" onMouseLeave={() => setShowPicker(false)}>
+                    <div className="absolute z-10 top-full mt-1">
                         <input 
                             type="color" 
                             value={color.hex}
@@ -76,18 +102,18 @@ const ColorEditorRow: React.FC<{
                     <option value="secondary">Secondary</option>
                 </select>
             </div>
-            <div className="flex-1">
-                 <label className="text-xs text-gray-400">Percent ({color.percent}%)</label>
+            <div className="w-24">
+                 <label className="text-xs text-gray-400">Percent</label>
                  <input
-                    type="range"
+                    type="number"
                     min="0"
                     max="100"
                     value={color.percent}
-                    onChange={(e) => onUpdate(color.id, { percent: Number(e.target.value) })}
-                    className="w-full h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer"
+                    onChange={handlePercentChange}
+                    className="w-full bg-[#1A1A1A] border border-gray-600 rounded text-xs px-2 py-1 percent-input"
                 />
             </div>
-            <button type="button" onClick={() => onRemove(color.id)} className="text-gray-500 hover:text-red-500">&times;</button>
+            <button type="button" onClick={() => onRemove(color.id)} className="text-gray-500 hover:text-red-500 text-xl font-bold">&times;</button>
         </div>
     );
 };
@@ -104,6 +130,7 @@ export const GeneratorControls: React.FC<GeneratorControlsProps> = ({ onSubmit, 
   const [seed, setSeed] = useState(28100);
   const [palette, setPalette] = useState<ColorInfo[]>(DEFAULT_PALETTE);
   const [simplicityLevel, setSimplicityLevel] = useState(5); // Default to Medium (5)
+  const [temperature, setTemperature] = useState(0);
 
   const totalPercent = useMemo(() => palette.reduce((sum, color) => sum + color.percent, 0), [palette]);
 
@@ -125,7 +152,10 @@ export const GeneratorControls: React.FC<GeneratorControlsProps> = ({ onSubmit, 
 
 
   const handleUpdateColor = (id: number, updatedColor: Partial<ColorInfo>) => {
-    setPalette(palette.map(c => c.id === id ? { ...c, ...updatedColor } : c));
+    const newPalette = palette.map(c => c.id === id ? { ...c, ...updatedColor } : c);
+    setPalette(newPalette);
+    const totalPercent = newPalette.reduce((sum, color) => sum + (color.percent || 0), 0);
+    console.log(`Palette updated: ${totalPercent}%`);
   };
 
   const handleRemoveColor = (id: number) => {
@@ -147,7 +177,7 @@ export const GeneratorControls: React.FC<GeneratorControlsProps> = ({ onSubmit, 
   
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    onSubmit({ prompt, mode, illustrationMode, runMode, theme, iconTheme, narrative, style, seed, palette, simplicityLevel });
+    onSubmit({ prompt, mode, illustrationMode, runMode, theme, iconTheme, narrative, style, seed, palette, simplicityLevel, temperature });
   };
 
   const OptionSelect: React.FC<{label: string, value: string, onChange: (e: React.ChangeEvent<HTMLSelectElement>) => void, options: string[] | readonly string[]}> = ({ label, value, onChange, options }) => (
@@ -246,13 +276,32 @@ export const GeneratorControls: React.FC<GeneratorControlsProps> = ({ onSubmit, 
 
         </div>
         
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-end">
             <div>
                 <label className="text-sm font-medium text-gray-400 mb-1 block">Run Mode</label>
                 <div className="flex items-center space-x-2 bg-[#1A1A1A] p-1 rounded-md border border-gray-700 h-[42px]">
                     <button type="button" onClick={() => setRunMode('single')} className={`flex-1 py-1 rounded ${runMode === 'single' ? 'bg-[#00D4AA] text-black font-semibold' : 'text-gray-300'}`}>Single</button>
                     <button type="button" onClick={() => setRunMode('batch')} className={`flex-1 py-1 rounded ${runMode === 'batch' ? 'bg-[#00D4AA] text-black font-semibold' : 'text-gray-300'}`}>Batch (4)</button>
                 </div>
+            </div>
+            <div>
+                <label htmlFor="temperature" className="text-sm font-medium text-gray-400 mb-1 block">
+                    Creativity Level: <span className="font-semibold text-white">{temperature}% {temperature === 0 ? 'locked' : 'varied'}</span>
+                </label>
+                <input
+                    id="temperature"
+                    type="range"
+                    min="0" max="100" step="1"
+                    value={temperature}
+                    onChange={(e) => setTemperature(Number(e.target.value))}
+                    className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer range-thumb disabled:opacity-50"
+                    disabled={mode === 'classic'}
+                />
+                 <div className="flex justify-between text-xs text-gray-500 mt-1">
+                    <span>Deterministic</span>
+                    <span>Creative</span>
+                </div>
+                 {mode === 'classic' && <p className="text-xs text-gray-500 mt-1 -mb-4">Creativity is disabled in Classic mode.</p>}
             </div>
         </div>
 
@@ -295,7 +344,7 @@ export const GeneratorControls: React.FC<GeneratorControlsProps> = ({ onSubmit, 
   );
 };
 
-// Custom styles for the range slider thumb
+// Custom styles for the range slider thumb and number input
 const style = document.createElement('style');
 style.innerHTML = `
 input[type="range"].range-thumb::-webkit-slider-thumb {
@@ -314,6 +363,14 @@ input[type="range"].range-thumb::-moz-range-thumb {
   background: #00D4AA;
   border-radius: 50%;
   cursor: pointer;
+}
+.percent-input {
+  -moz-appearance: textfield;
+}
+.percent-input::-webkit-outer-spin-button,
+.percent-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
 }
 `;
 document.head.appendChild(style);

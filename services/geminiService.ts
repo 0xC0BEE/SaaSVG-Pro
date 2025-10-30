@@ -110,15 +110,14 @@ const generateSingleAsset = async (
   const paletteListRatios = options.palette
     .map(c => `${c.hex} ${c.percent}%`)
     .join(', ');
-  // @ts-ignore
-  const seedHash = CryptoJS.MD5(options.seed.toString()).toString();
-  const styleSeedString = `lock exact composition, shapes, arrangement, and style to seed hash ${seedHash}—no variations, reproduce previous gen with this seed and palette [${paletteListRatios}].`;
-
-  console.log(`Seed lock injected for [${options.seed}]: temperature 0, top_p 0`);
-
-
+  
   if (options.mode === 'classic') {
     updateStatus('Generating SVG with Gemini Classic...');
+    // @ts-ignore
+    const seedHash = CryptoJS.MD5(options.seed.toString()).toString();
+    const styleSeedString = `lock exact composition, shapes, arrangement, and style to seed hash ${seedHash}—no variations, reproduce previous gen with this seed and palette [${paletteListRatios}].`;
+    console.log(`Seed lock injected for [${options.seed}]: temperature 0, top_p 0`);
+
     const colorPrompt = `Use this exact color palette with the specified percentages: ${options.palette
       .map(c => `${c.hex} (${c.percent}%)`)
       .join(', ')}.`;
@@ -154,28 +153,10 @@ const generateSingleAsset = async (
   }
 
   if (options.mode === 'nano') {
-    // Phase 1: Generate PNG with Gemini
     updateStatus('Phase 1/1: Generating base PNG with Gemini Nano...');
+    console.log(`Temperature: ${options.temperature}%, palette locked`);
     
-    // --- New Palette Injection Logic ---
-    let paletteInjectionString = '';
-    const totalPercent = options.palette.reduce((sum, p) => sum + p.percent, 0);
-
-    if (totalPercent > 0) {
-        const normalizedPalette = options.palette.map(p => ({
-            ...p,
-            percent: Math.round((p.percent / totalPercent) * 100)
-        }));
-
-        const paletteList = normalizedPalette
-            .map(c => `${c.category} ${c.hex} ${c.percent}%`)
-            .join(', ');
-            
-        paletteInjectionString = `Strictly recolor the exact composition, arrangement, and style from seed ${options.seed} using only this new palette [${paletteList}]. Make no changes to shapes, edges, or poses. Use dominant primary colors for main elements and secondary for accents. Do not introduce any other hues or colors. The final image should be vibrant and high-contrast.`;
-        
-    } else {
-        paletteInjectionString = 'Use a vibrant, high-contrast color palette.';
-    }
+    const paletteInjectionString = `Vary shapes/composition with creativity ${options.temperature}%, but strictly lock to exact color palette [${paletteListRatios}]—no deviations, dominant primary for main elements, secondary for accents, no other hues.`;
     
     let nanoPrompt = '';
     
@@ -207,9 +188,16 @@ const generateSingleAsset = async (
             .replace('[prompt]', options.prompt);
     }
     
-    console.log(`Mode: ${options.illustrationMode}`, `Style: ${options.style}`);
+    const themeForLog = options.illustrationMode === 'icons' ? options.iconTheme : options.theme;
+    console.log(`Mode: ${options.illustrationMode}`, `Style: ${options.style}`, `Theme: ${themeForLog}`);
+    
+    // @ts-ignore
+    const seedHash = CryptoJS.MD5(options.seed.toString()).toString();
+    const finalSeedInstruction = options.temperature === 0
+        ? `lock exact composition, shapes, arrangement, and style to seed hash ${seedHash}—no variations, reproduce previous gen with this seed.`
+        : `Use seed hash ${seedHash} as a creative starting point.`;
 
-    const finalNanoPrompt = `${nanoPrompt}\n${styleSeedString}`;
+    const finalNanoPrompt = `${nanoPrompt}\n${finalSeedInstruction}`;
     console.log('Full Nano Prompt:', finalNanoPrompt);
     
     const imageResponse: GenerateContentResponse = await ai.models.generateContent({
@@ -219,8 +207,8 @@ const generateSingleAsset = async (
       },
       config: {
           responseModalities: [Modality.IMAGE],
-          temperature: 0,
-          topP: 0,
+          temperature: options.temperature / 100,
+          topP: options.temperature === 0 ? 0 : undefined,
       },
     });
 
@@ -234,12 +222,10 @@ const generateSingleAsset = async (
         throw new Error('Gemini did not return an image for vectorization.');
     }
     
-    // Tracing is disabled globally. Always return the PNG for Nano mode.
     updateStatus('PNG generation complete.');
     return { svg: '', png: pngBase64, seed: options.seed };
   }
   
-  // Should not be reached
   throw new Error('Invalid generation mode specified.');
 };
 
@@ -260,7 +246,7 @@ export const generateSVGs = async (
     const BATCH_SIZE = 4;
     for (let i = 0; i < BATCH_SIZE; i++) {
         updateStatus(`Generating asset ${i + 1} of ${BATCH_SIZE}...`);
-        const batchOptions = { ...options, seed: options.seed + i };
+        const batchOptions = { ...options, seed: options.seed + i, temperature: options.temperature };
         const asset = await generateSingleAsset(batchOptions, updateStatus);
         assets.push(asset);
 

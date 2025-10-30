@@ -59,6 +59,10 @@ export const ICON_ART_STYLES: Record<string, { description: string; fewShot: str
     'sleek-3d': {
         description: 'sleek 3D isometric icon without humans, with extruded depth, soft shadows, and neutral blue/green colors, suitable for finance themes.',
         fewShot: 'a sleek 3D isometric wallet icon with rounded highlights and soft shadows',
+    },
+    'Semi Realistic Metallic': {
+        description: 'semi-realistic 3D icons with subtle shiny metallic effects on edges, vibrant accents',
+        fewShot: 'semi-realistic 3D credit card icon with chrome reflections on NFC, angled view, no humans'
     }
 };
 
@@ -70,11 +74,13 @@ export const ICON_THEMES: Record<string, string> = {
     'Education': 'education theme with books, graduation caps, and pencils',
     'Sports': 'sports theme with balls, trophies, and athletic equipment',
     'Video Games': 'video games theme with controllers, joysticks, and consoles',
+    'Supply Chain': 'supply chain theme with logistics icons like trucks, boxes, chains, and delivery vehicles, modular and without humans',
 };
 
 
 export const NANO_PROMPT_TEMPLATE = `
 Generate a high-contrast, minimalist PNG illustration with bold outlines, flat color fills, and sharp, clean edges, ideal for vector tracing.
+CRITICAL: The object must be placed on a solid, uniform, single-color green (#00FF00) background. There must be no shadows, gradients, or other elements in the background.
 [injected_snippet]
 [colors]
 Primary subject: [prompt].
@@ -85,7 +91,7 @@ export const ICON_PROMPT_TEMPLATE = `
 Generate a 3D isometric icon in the style of an image described as "[styleFewShot]".
 The icon must be a simple, minimal representation of a '[prompt]' for the '[iconTheme]' industry.
 Technical requirements:
-- Transparent background with alpha channel (no white fill).
+- CRITICAL: Place the icon on a solid, uniform, single-color green (#00FF00) background. There must be no shadows, gradients, or other elements in the background. This is for automated background removal.
 - Maximum of [simplicityLevel] distinct visual elements.
 - No humans, text, or visual clutter (e.g., extra props like coins or steam).
 - Focus on the core object.

@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { type Asset } from '../services/types';
-import { downloadFile, downloadBase64File } from '../lib/utils';
+import { downloadFile, downloadBase64File, removeGreenScreen } from '../lib/utils';
 import { DownloadIcon } from '../icons/DownloadIcon';
 import { ImageIcon } from '../icons/ImageIcon';
 import { VectorIcon } from '../icons/VectorIcon';
+import { Spinner } from './Spinner';
 
 interface AssetCardProps {
   asset: Asset;
@@ -13,20 +14,46 @@ type ViewMode = 'svg' | 'png';
 
 export const AssetCard: React.FC<AssetCardProps> = ({ asset }) => {
   const [viewMode, setViewMode] = useState<ViewMode>(asset.png && !asset.svg ? 'png' : 'svg');
+  const [processedPngSrc, setProcessedPngSrc] = useState<string | null>(null);
+  const [isProcessing, setIsProcessing] = useState(false);
+
+  useEffect(() => {
+    if (asset.png) {
+      setIsProcessing(true);
+      removeGreenScreen(asset.png)
+        .then(processedDataURL => {
+          setProcessedPngSrc(processedDataURL);
+        })
+        .catch(error => {
+          console.error('Failed to remove green screen:', error);
+          // Fallback to original image
+          setProcessedPngSrc(`data:image/png;base64,${asset.png}`);
+        })
+        .finally(() => {
+          setIsProcessing(false);
+        });
+    }
+  }, [asset.png]);
+
 
   const handleDownloadSVG = () => {
     downloadFile(asset.svg, `saasvg-pro-${asset.seed}.svg`, 'image/svg+xml');
   };
 
   const handleDownloadPNG = () => {
-    if (asset.png) {
+    if (processedPngSrc) {
+      const base64Data = processedPngSrc.split(',')[1];
+      if (base64Data) {
+        downloadBase64File(base64Data, `saasvg-pro-${asset.seed}.png`, 'image/png');
+      }
+    } else if (asset.png) {
       downloadBase64File(asset.png, `saasvg-pro-${asset.seed}.png`, 'image/png');
     }
   };
 
   return (
     <div className="bg-[#121212] border border-gray-800 rounded-lg overflow-hidden transition-all duration-300 hover:shadow-2xl hover:shadow-[#00D4AA]/10 hover:border-[#00D4AA]/30">
-      <div className="aspect-square w-full bg-grid-pattern flex items-center justify-center p-2">
+      <div className="aspect-square w-full flex items-center justify-center p-2">
         <div className="w-full h-full p-6 flex items-center justify-center transition-transform duration-300 ease-in-out hover:scale-105">
           {viewMode === 'svg' && asset.svg ? (
             <div 
@@ -34,7 +61,9 @@ export const AssetCard: React.FC<AssetCardProps> = ({ asset }) => {
               dangerouslySetInnerHTML={{ __html: asset.svg }} 
             />
           ) : (
-            asset.png && <img src={`data:image/png;base64,${asset.png}`} alt={`Generated asset ${asset.seed}`} className="max-w-full max-h-full object-contain" />
+            isProcessing 
+              ? <Spinner /> 
+              : (processedPngSrc && <img src={processedPngSrc} alt={`Generated asset ${asset.seed}`} className="max-w-full max-h-full object-contain" />)
           )}
         </div>
       </div>
@@ -66,12 +95,3 @@ export const AssetCard: React.FC<AssetCardProps> = ({ asset }) => {
     </div>
   );
 };
-
-const style = document.createElement('style');
-style.innerHTML = `
-  .bg-grid-pattern {
-    background-image: linear-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
-    background-size: 20px 20px;
-  }
-`;
-document.head.appendChild(style);

@@ -71,3 +71,41 @@ export const hexToCmyk = (hex: string): string => {
 
     return [c, m, y, k].map(v => Math.round(v * 100)).join(',');
 }
+
+export const removeGreenScreen = (pngBase64: string): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = img.width;
+      canvas.height = img.height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        return reject(new Error('Could not get canvas context'));
+      }
+      ctx.drawImage(img, 0, 0);
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const data = imageData.data;
+      
+      const r_max = 100;
+      const g_min = 150;
+      const b_max = 100;
+
+      for (let i = 0; i < data.length; i += 4) {
+        const r = data[i];
+        const g = data[i + 1];
+        const b = data[i + 2];
+        
+        if (r < r_max && g > g_min && b < b_max) {
+          data[i + 3] = 0; // Set alpha to 0
+        }
+      }
+      ctx.putImageData(imageData, 0, 0);
+      resolve(canvas.toDataURL('image/png'));
+    };
+    img.onerror = (err) => {
+      reject(new Error('Failed to load image for processing'));
+    };
+    img.src = `data:image/png;base64,${pngBase64}`;
+  });
+};

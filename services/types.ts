@@ -25,6 +25,7 @@ export interface GeneratorOptions {
   seed: number;
   palette: ColorInfo[];
   simplicityLevel: number;
+  temperature: number;
 }
 
 export interface Asset {
