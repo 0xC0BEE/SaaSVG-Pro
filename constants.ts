@@ -66,15 +66,47 @@ export const ICON_ART_STYLES: Record<string, { description: string; fewShot: str
     }
 };
 
-export const ICON_THEMES: Record<string, string> = {
-    'Finance': 'finance theme with charts, wallets, and currency symbols',
-    'Tech': 'tech theme with devices, code symbols, and network icons',
-    'Logistics': 'logistics theme with trucks, maps, and packages',
-    'Health': 'health theme with medical symbols, hearts, and first-aid kits',
-    'Education': 'education theme with books, graduation caps, and pencils',
-    'Sports': 'sports theme with balls, trophies, and athletic equipment',
-    'Video Games': 'video games theme with controllers, joysticks, and consoles',
-    'Supply Chain': 'supply chain theme with logistics icons like trucks, boxes, chains, and delivery vehicles, modular and without humans',
+export const ICON_THEMES: Record<string, { description: string; keywords: string; negatives: string; }> = {
+    'Finance': {
+        description: 'finance theme with charts, wallets, and currency symbols',
+        keywords: 'charts, wallets, currency symbols, coins, growth arrows, credit cards',
+        negatives: 'no tech devices like laptops or servers, no vehicles, no medical symbols',
+    },
+    'Tech': {
+        description: 'tech theme with devices, code symbols, and network icons',
+        keywords: 'laptop, code symbols, UI elements, circuits, app icons, servers, cloud',
+        negatives: 'no credit cards, wallets, coins, or financial charts',
+    },
+    'Logistics': {
+        description: 'logistics theme with trucks, maps, and packages',
+        keywords: 'trucks, maps, packages, delivery drone, barcode, container ship',
+        negatives: 'no financial symbols, no medical items, no people',
+    },
+    'Health': {
+        description: 'health theme with medical symbols, hearts, and first-aid kits',
+        keywords: 'medical cross, hearts, first-aid kits, stethoscope, DNA strand, pill',
+        negatives: 'no money, no computers unless screen shows health data, no weapons',
+    },
+    'Education': {
+        description: 'education theme with books, graduation caps, and pencils',
+        keywords: 'books, graduation caps, pencils, blackboard, microscope, apple',
+        negatives: 'no currency, no sports equipment, no office cubicles',
+    },
+    'Sports': {
+        description: 'sports theme with balls, trophies, and athletic equipment',
+        keywords: 'basketball, football, trophies, athletic equipment, whistle, stopwatch, medal',
+        negatives: 'no academic items like books, no business charts, no computers',
+    },
+    'Video Games': {
+        description: 'video games theme with controllers, joysticks, and consoles',
+        keywords: 'game controllers, joysticks, consoles, headset, pixel art heart, keyboard',
+        negatives: 'no real-world weapons, no office equipment, no financial items',
+    },
+    'Supply Chain': {
+        description: 'supply chain theme with logistics icons like trucks, boxes, chains, and delivery vehicles, modular and without humans',
+        keywords: 'trucks, boxes, chains, delivery vehicles, container ship, factory, barcode',
+        negatives: 'no financial charts, no retail shopping carts, no people',
+    },
 };
 
 
@@ -88,15 +120,17 @@ The illustration must be 400x300 pixels.
 `;
 
 export const ICON_PROMPT_TEMPLATE = `
-Generate a 3D isometric icon in the style of an image described as "[styleFewShot]".
-The icon must be a simple, minimal representation of a '[prompt]' for the '[iconTheme]' industry.
+Generate a [style] [theme] icon: [prompt].
+Theme context: [description]. Include theme elements like: [keywords].
+The icon must be a simple, modular, 3D isometric icon with no humans.
+Negative prompt: [negatives], no busy extra elements.
+
 Technical requirements:
 - CRITICAL REQUIREMENT: The background MUST be a pure solid green color (#00FF00). It must be perfectly uniform. NO textures, NO patterns, NO gradients, NO shadows. This is for automated background removal and is non-negotiable.
 - Maximum of [simplicityLevel] distinct visual elements.
-- No humans, text, or visual clutter (e.g., extra props like coins or steam).
-- Focus on the core object.
-- Clean lines with few paths, optimized for Figma editing.
-- Use this exact color palette: [colors].
+- No text or visual clutter.
+- Focus on the core object with clean lines, optimized for Figma editing.
+- Use this exact color palette and ratios: [colors].
 - The final image must be a 400x300 PNG.
 `;
 

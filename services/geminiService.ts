@@ -154,26 +154,42 @@ const generateSingleAsset = async (
 
   if (options.mode === 'nano') {
     updateStatus('Phase 1/1: Generating base PNG with Gemini Nano...');
-    console.log(`Temperature: ${options.temperature}%, palette locked`);
-    
-    const paletteInjectionString = `Vary shapes/composition with creativity ${options.temperature}%, but strictly lock to exact color palette [${paletteListRatios}]—no deviations, dominant primary for main elements, secondary for accents, no other hues.`;
     
     let nanoPrompt = '';
-    
+    let finalNanoPrompt = '';
+    let generationConfig: any;
+
+    // @ts-ignore
+    const seedHash = CryptoJS.MD5(options.seed.toString()).toString();
+
     if (options.illustrationMode === 'icons') {
-        const artStyle = ICON_ART_STYLES[options.style];
-        if (!artStyle) throw new Error(`Invalid icon style selected: ${options.style}`);
-        
+        console.log(`Prompt locked for ${options.iconTheme} ${options.style} seed ${options.seed}`);
+        const themeDetails = ICON_THEMES[options.iconTheme as keyof typeof ICON_THEMES];
+        if (!themeDetails) throw new Error(`Invalid icon theme selected: ${options.iconTheme}`);
+
         nanoPrompt = ICON_PROMPT_TEMPLATE
-            .replace('[styleFewShot]', artStyle.fewShot)
+            .replace('[style]', options.style)
+            .replace('[theme]', options.iconTheme)
             .replace('[prompt]', options.prompt)
-            .replace('[iconTheme]', ICON_THEMES[options.iconTheme])
+            .replace('[description]', themeDetails.description)
+            .replace('[keywords]', themeDetails.keywords)
+            .replace('[negatives]', themeDetails.negatives)
             .replace('[simplicityLevel]', options.simplicityLevel.toString())
-            .replace('[colors]', paletteInjectionString);
-            
-        console.log('Icons mode prompt constructed.');
+            .replace('[colors]', paletteListRatios);
+        
+        const strictLockInstruction = `Lock exact composition, shapes, arrangement, and style to seed hash ${seedHash}—no variations, reproduce previous gen with this seed. Strictly adhere to the negative prompts.`;
+        finalNanoPrompt = `${nanoPrompt}\n${strictLockInstruction}`;
+        
+        generationConfig = {
+            responseModalities: [Modality.IMAGE],
+            temperature: 0, // Force deterministic output for icons
+            topP: 0,
+        };
 
     } else { // 'illustrations' mode
+        console.log(`Temperature: ${options.temperature}%, palette locked`);
+        const paletteInjectionString = `Vary shapes/composition with creativity ${options.temperature}%, but strictly lock to exact color palette [${paletteListRatios}]—no deviations, dominant primary for main elements, secondary for accents, no other hues.`;
+
         const narrativeText = NARRATIVES[options.narrative as keyof typeof NARRATIVES];
         const artStyle = ART_STYLES[options.style];
         let injectedSnippet = `Generate a vibrant undraw-style illustration in ${options.style} style. Style description: ${artStyle.description}. The image should depict a ${narrativeText} ${options.theme} scene. A good example of the style is "${artStyle.fewShot}".`;
@@ -186,18 +202,22 @@ const generateSingleAsset = async (
             .replace('[injected_snippet]', injectedSnippet)
             .replace('[colors]', paletteInjectionString)
             .replace('[prompt]', options.prompt);
+        
+        const finalSeedInstruction = options.temperature === 0
+            ? `lock exact composition, shapes, arrangement, and style to seed hash ${seedHash}—no variations, reproduce previous gen with this seed.`
+            : `Use seed hash ${seedHash} as a creative starting point.`;
+
+        finalNanoPrompt = `${nanoPrompt}\n${finalSeedInstruction}`;
+        
+        generationConfig = {
+            responseModalities: [Modality.IMAGE],
+            temperature: options.temperature / 100,
+            topP: options.temperature === 0 ? 0 : undefined,
+        };
     }
     
     const themeForLog = options.illustrationMode === 'icons' ? options.iconTheme : options.theme;
     console.log(`Mode: ${options.illustrationMode}`, `Style: ${options.style}`, `Theme: ${themeForLog}`);
-    
-    // @ts-ignore
-    const seedHash = CryptoJS.MD5(options.seed.toString()).toString();
-    const finalSeedInstruction = options.temperature === 0
-        ? `lock exact composition, shapes, arrangement, and style to seed hash ${seedHash}—no variations, reproduce previous gen with this seed.`
-        : `Use seed hash ${seedHash} as a creative starting point.`;
-
-    const finalNanoPrompt = `${nanoPrompt}\n${finalSeedInstruction}`;
     console.log('Full Nano Prompt:', finalNanoPrompt);
     
     const imageResponse: GenerateContentResponse = await ai.models.generateContent({
@@ -205,11 +225,7 @@ const generateSingleAsset = async (
       contents: {
         parts: [{ text: finalNanoPrompt }],
       },
-      config: {
-          responseModalities: [Modality.IMAGE],
-          temperature: options.temperature / 100,
-          topP: options.temperature === 0 ? 0 : undefined,
-      },
+      config: generationConfig,
     });
 
     let pngBase64 = '';
